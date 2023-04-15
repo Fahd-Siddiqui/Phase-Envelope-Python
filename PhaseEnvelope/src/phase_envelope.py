@@ -1,4 +1,5 @@
 import numpy
+import numpy as np
 
 from PhaseEnvelope.src.eos import EOS
 
@@ -7,24 +8,24 @@ class PhaseEnvelope:
     #@numba.jit(nopython=True)
     def calculate(self, comp, z, Tc, Pc, acentric):
         R = 83.14462175  # cm³.bar/(mol.K)
-        Volume = numpy.zeros(2)
-        amix = numpy.zeros(2)
-        bmix = numpy.zeros(2)
+        Volume = np.zeros(2)
+        amix = np.zeros(2)
+        bmix = np.zeros(2)
 
         phase_envelope_results = []
 
-        b = numpy.zeros(comp)
-        ac = numpy.zeros(comp)
+        b = np.zeros(comp)
+        ac = np.zeros(comp)
 
-        K = numpy.zeros(comp)
-        Composition = numpy.zeros((comp, comp))
-        kij = numpy.zeros((comp, comp))
-        lij = numpy.zeros((comp, comp))
+        K = np.zeros(comp)
+        Composition = np.zeros((comp, comp))
+        kij = np.zeros((comp, comp))
+        lij = np.zeros((comp, comp))
 
-        dF = numpy.zeros((comp + 2) ** 2)
-        step = numpy.zeros(comp + 2)
-        sensitivity = numpy.zeros(comp + 2)
-        F = numpy.zeros(comp + 2)
+        dF = np.zeros((comp + 2) ** 2)
+        step = np.zeros(comp + 2)
+        sensitivity = np.zeros(comp + 2)
+        F = np.zeros(comp + 2)
         #     Indep# endent Variables     #
         # (F-1)*C          K        #
         #  (F-1)         beta         #
@@ -49,7 +50,7 @@ class PhaseEnvelope:
         T = 80.0  # Initial Temperature Guess (K)
         P = 0.5  # Initial Pressure (bar)
 
-        K= numpy.exp(5.373 * (1.0 + acentric) * (1.0 - Tc / T)) * (Pc / P)  # Whitson's Approach for Vapor-Liquid Equilibria
+        K= np.exp(5.373 * (1.0 + acentric) * (1.0 - Tc / T)) * (Pc / P)  # Whitson's Approach for Vapor-Liquid Equilibria
         z = z / sum(z)  # Normalizing Global Composition
         Composition[:, 0] = z # Reference Phase Composition
 
@@ -93,7 +94,7 @@ class PhaseEnvelope:
         step[0] = 1.0e+6
         maxit = 100
         it = 0
-        while (numpy.abs(step[0]) > tol and it < maxit):
+        while (np.abs(step[0]) > tol and it < maxit):
             it = it + 1
             T_old = T
 
@@ -130,8 +131,8 @@ class PhaseEnvelope:
             step[0] = F[0] / dF[0]
 
             # Step Brake
-            if (numpy.abs(step[0]) > 0.25 * T_old):
-                step[0] = 0.25 * T_old * step[0] / numpy.abs(step[0])
+            if (np.abs(step[0]) > 0.25 * T_old):
+                step[0] = 0.25 * T_old * step[0] / np.abs(step[0])
 
                 # Updating Temperature
             T = T_old - step[0]
@@ -144,11 +145,11 @@ class PhaseEnvelope:
             for i in range(comp):
                 FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                 FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                K[i] = numpy.exp(FugCoef_ref - FugCoef_aux)
+                K[i] = np.exp(FugCoef_ref - FugCoef_aux)
             # enddo
         # enddo
 
-        if (it == maxit and numpy.abs(step[0]) > tol):  # then
+        if (it == maxit and np.abs(step[0]) > tol):  # then
             print("WARNING: In Successive Substitution Method - Maximum Number of Iterations Reached#")
             print("Exiting Program...")
             exit()
@@ -156,13 +157,13 @@ class PhaseEnvelope:
         # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         # Continuation Method And Newton's Method Settings******************************************************************************
-        S = numpy.log(P)  # Specified Variable Value
+        S = np.log(P)  # Specified Variable Value
         dS = 0.1  # Specified Variable Variation
-        Var = numpy.log(numpy.hstack((K, T, P)))
+        Var = np.log(np.hstack((K, T, P)))
 
         SpecVar = comp + 1  # Specified Variable Index
         Var[SpecVar] = S  # Specified Indep# endent Variable
-        dfdS = numpy.zeros_like(Var)
+        dfdS = np.zeros_like(Var)
         dfdS[comp + 1] = 1.0
         maxit = 100  # Maximum Number Of Iteration In Newton's Method
         maxTstep = 5.0  # Maximum Temperature Step In Continuation Method
@@ -238,7 +239,7 @@ class PhaseEnvelope:
                 diffT = diff * Var[comp + 0]
 
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
-                T = numpy.exp(Var[comp + 0] + diffT)
+                T = np.exp(Var[comp + 0] + diffT)
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
@@ -249,7 +250,7 @@ class PhaseEnvelope:
                     dF[(i) * (comp + 2) + comp + 0] = FugCoef_aux - FugCoef_ref
                 # enddo
 
-                T = numpy.exp(Var[comp + 0] - diffT)
+                T = np.exp(Var[comp + 0] - diffT)
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
@@ -264,7 +265,7 @@ class PhaseEnvelope:
                     dF[(i) * (comp + 2) + comp + 0] = dF[(i) * (comp + 2) + comp + 0] / (2.0 * diffT)
                 # enddo
 
-                T = numpy.exp(Var[comp + 0])
+                T = np.exp(Var[comp + 0])
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 # OBS: The derivative ok ln(K) with respect to ln(T) is null.
                 # **********************************************************************************************************************
@@ -276,7 +277,7 @@ class PhaseEnvelope:
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
-                P = numpy.exp(Var[comp + 1] + diffP)
+                P = np.exp(Var[comp + 1] + diffP)
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
@@ -284,7 +285,7 @@ class PhaseEnvelope:
                     dF[(i) * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
                 # enddo
 
-                P = numpy.exp(Var[comp + 1] - diffP)
+                P = np.exp(Var[comp + 1] - diffP)
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
@@ -319,7 +320,7 @@ class PhaseEnvelope:
                 # call GaussElimination(dF,F,step,comp+1)
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
                 #step = solve(A, F)
-                step = numpy.linalg.solve(A,F)
+                step = np.linalg.solve(A,F)
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 # print( "VAR", Var, "K", K, "P", P, "T", T, "step", step, "Var_old", Var_old
 
@@ -329,10 +330,10 @@ class PhaseEnvelope:
                 # **********************************************************************************************************************
 
                 # Calculating The Natural Form Of Indep# endent Variables And Updating Compositions Of The Incipient Phase////////////////
-                K = numpy.exp(Var[0:comp])
+                K = np.exp(Var[0:comp])
                 Composition[:,1] = Composition[:, 0] * K
-                T = numpy.exp(Var[comp + 0])
-                P = numpy.exp(Var[comp + 1])
+                T = np.exp(Var[comp + 0])
+                P = np.exp(Var[comp + 1])
 
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
@@ -367,12 +368,12 @@ class PhaseEnvelope:
                 # call GaussElimination(dF,dfdS,sensitivity,comp+1)
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
                 #sensitivity = solve(A, dfdS)
-                sensitivity = numpy.linalg.solve(A, dfdS)
+                sensitivity = np.linalg.solve(A, dfdS)
 
                 if (flag_crit == 0):  # then
                     # Choosing The New Specified Indep# endent Variable
                     for i in range(comp + 2):
-                        if (numpy.abs(sensitivity[i]) > numpy.abs(sensitivity[SpecVar])):
+                        if (np.abs(sensitivity[i]) > np.abs(sensitivity[SpecVar])):
                             SpecVar = i
                     # enddo
                     # OBS: The specified variable is the one with the greatest sensitivity,
@@ -391,13 +392,13 @@ class PhaseEnvelope:
                     # **************************************************************************************************************************
 
                     # Adjusting Stepsize////////////////////////////////////////////////////////////////////////////////////////////////////////
-                    dSmax = (numpy.abs(Var[SpecVar]) ** 0.5) / 10.0
+                    dSmax = (np.abs(Var[SpecVar]) ** 0.5) / 10.0
                     if (dSmax < 0.1):
                         dSmax = 0.1
 
-                    dSmax = numpy.abs(dSmax) * (numpy.abs(dS) / dS)
+                    dSmax = np.abs(dSmax) * (np.abs(dS) / dS)
                     dS = dS * 4.0 / it
-                    if (numpy.abs(dSmax) < numpy.abs(dS)):
+                    if (np.abs(dSmax) < np.abs(dS)):
                         dS = dSmax
                     # Defining Specified Variable Value In The Next Point
                     S = S + dS
@@ -411,25 +412,25 @@ class PhaseEnvelope:
 
                     # Analyzing Temperature Stepsize////////////////////////////////////////////////////////////////////////////////////////////
                     T_old = T
-                    T = numpy.exp(Var[comp + 0])
+                    T = np.exp(Var[comp + 0])
                     # Large Temperature Steps Are Not Advisable
-                    while (numpy.abs(T - T_old) > maxTstep):
+                    while (np.abs(T - T_old) > maxTstep):
                         dS = dS / 2.0
                         S = S - dS
                         for i in range(comp + 2):
                             Var[i] = Var[i] - dS * sensitivity[i]
                         # enddo
-                        T = numpy.exp(Var[comp + 0])
+                        T = np.exp(Var[comp + 0])
                     # enddo
                     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                     # Analyzing Proximity to Critical Point*************************************************************************************
                     # Seeking The Greatest K-factor
-                    maxK_i = numpy.argmax(abs(Var[0:comp]))
+                    maxK_i = np.argmax(abs(Var[0:comp]))
                     # If The ln[K[i]] Stepsize Is Too Big, It Should Be Decreased
-                    if (numpy.abs(Var[maxK_i]) < 0.1):  # then
+                    if (np.abs(Var[maxK_i]) < 0.1):  # then
                         # Analyzing maxK stepsize
-                        if (numpy.abs(dS * sensitivity[maxK_i]) > K_CritPoint):  # then
+                        if (np.abs(dS * sensitivity[maxK_i]) > K_CritPoint):  # then
                             S = S - dS
                             for i in range(comp + 2):
                                 Var[i] = Var[i] - dS * sensitivity[i]
@@ -510,22 +511,22 @@ class PhaseEnvelope:
             # endif
 
             for i in range(comp):
-                K[i] = numpy.exp(Var[i])
+                K[i] = np.exp(Var[i])
                 Composition[i, 1] = Composition[i, 0] * K[i]
             # enddo
-            T = numpy.exp(Var[comp + 0])
-            P = numpy.exp(Var[comp + 1])
+            T = np.exp(Var[comp + 0])
+            P = np.exp(Var[comp + 1])
         # enddo #End of  the main loop
 
         return phase_envelope_results
 
     #@staticmethod
     #@numba.njit()
-    #def solve(A:numpy.ndarray, b: numpy.ndarray):
+    #def solve(A:np.ndarray, b: np.ndarray):
 
 #@numba.jit()
 
-def solve(A:numpy.ndarray, b: numpy.ndarray):
-    return numpy.linalg.solve(A, b)
-    # return numpy.linalg.lstsq(A, b)
-    #return numpy.dot(numpy.linalg.inv(A), b)
+def solve(A:np.ndarray, b: np.ndarray):
+    return np.linalg.solve(A, b)
+    # return np.linalg.lstsq(A, b)
+    #return np.dot(np.linalg.inv(A), b)
