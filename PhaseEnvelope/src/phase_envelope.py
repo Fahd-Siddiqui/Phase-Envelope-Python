@@ -3,16 +3,13 @@ import numpy as np
 from PhaseEnvelope.src.Constants import Constants
 from PhaseEnvelope.src.eos import EOS
 from PhaseEnvelope.src.successive_substitution import SuccessiveSubstitution
+from PhaseEnvelope.src.utils import Utils
+from PhaseEnvelope.src.calculator import Calculator
 
 
 class PhaseEnvelope:
 
     def calculate(self, T, P, comp, z, Tc, Pc, acentric):
-        # TODO Delete
-        # b = np.zeros(comp)
-        # ac = np.zeros(comp)
-        # K = np.zeros(comp)
-
         amix = np.zeros(2)
         bmix = np.zeros(2)
 
@@ -22,7 +19,7 @@ class PhaseEnvelope:
         kij = np.zeros((comp, comp))
         lij = np.zeros((comp, comp))
 
-        dF = np.zeros((comp + 2) ** 2, dtype=np.float64)
+        dF = np.zeros((comp + 2) ** 2)
         step = np.zeros(comp + 2)
         sensitivity = np.zeros(comp + 2)
         F = np.zeros(comp + 2)
@@ -37,10 +34,10 @@ class PhaseEnvelope:
         ac = 0.45724 * Constants.R ** 2 * Tc * Tc / Pc
 
         K= np.exp(5.373 * (1.0 + acentric) * (1.0 - Tc / T)) * (Pc / P)  # Whitson's Approach for Vapor-Liquid Equilibria
-        z = z / sum(z)  # Normalizing Global Composition
+        z = Utils.normalize(z)
         Composition[:, 0] = z # Reference Phase Composition
 
-        phase = [0, 1]
+        phase = np.array([0, 1])
         # phase[0] = 0 #Reference Phase Index (Vapor)
         # phase[1] = 1 #Incipient Phase Index (Liquid)
 
@@ -70,52 +67,23 @@ class PhaseEnvelope:
 
         # Initializing Continuation Method
         point = 0
-        while (P >= 0.5 and P < 1000. and flag_error == 0):  # Main Loop
+        while 0.5 <= P < 1000.0 and flag_error == 0:  # Main Loop
             point = point + 1
             it = 0
             maxstep = 1e+6
-            while (maxstep > tol and it < maxit):  # Newton's Method Loop
+            while maxstep > tol and it < maxit:  # Newton's Method Loop
                 it = it + 1
 
-                # Calculating Residuals/////////////////////////////////////////////////////////////////////////////////////////////////
+                # Calculating Residuals
                 a = EOS.eos_parameters(acentric, Tc, ac, T)
-                amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-                amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-                Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
-                F[0:comp] = Var[0:comp] + FugCoef_aux - FugCoef_ref
+                Volume = EOS.calculate_mixing_rules(amix, bmix, comp, a,b, kij,lij, Composition, P,T, phase)
+                fugacity_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
+                F[0:comp] = Var[0:comp] + fugacity_difference
                 F[comp] = np.sum(Composition[:, 1] - Composition[:, 0])
-
-                # Residual Responsible For Determining The Specified Indep# endent Variable
                 F[comp + 1] = Var[SpecVar] - S
-                # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 # Differentiating The First "C" Residuals With Respect to ln[K(j)]******************************************************
-                for i in range(comp):
-                    for j in range(comp):
-                        diffFrac = diff * Composition[j, 1]
-
-                        aux = Composition[j, 1]
-                        # Numerically Differentiating the Fugacity Coefficient of the Incipient Phase
-                        Composition[j, 1] = aux + diffFrac
-                        amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-                        Volume[1] = EOS.EoS_Volume(P, T, bmix[1], amix[1], phase[1])
-                        FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                        dF[(i) * (comp + 2) + j] = FugCoef_aux
-
-                        Composition[j, 1] = aux - diffFrac
-                        amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-                        Volume[1] = EOS.EoS_Volume(P, T, bmix[1], amix[1], phase[1])
-                        FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                        dF[(i) * (comp + 2) + j] -= FugCoef_aux
-
-                        Composition[j, 1] = aux
-                        # Derivative of ln[FugacityCoefficient(IncipientPhase,Component i)] With Respect to ln[K(j)]
-                        dF[(i) * (comp + 2) + j] *= Composition[j, 1] / (2.0 * diffFrac)
-
-                        # Derivative of ln[K[i]] With Respect to ln[K(j)] = Kronecker Delta
-                        if i == j:
-                            dF[i * (comp + 2) + j] += 1.0
+                self.differentiate_first_c_residuals_lnK(comp, diff, Composition, amix, bmix, a, b, kij, lij, Volume, P, T, phase, dF)
 
                 # **********************************************************************************************************************
 
@@ -128,70 +96,50 @@ class PhaseEnvelope:
                 diffT = diff * Var[comp]
 
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
-                T = np.exp(Var[comp] + diffT)
-                a = EOS.eos_parameters(acentric, Tc, ac, T) 
-                amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-                amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-                Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-
-                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
                 i_arr = np.arange(comp)
-                dF[i_arr * (comp + 2) + comp] = FugCoef_aux - FugCoef_ref
+                for sign in [1, -1]:
+                    T = np.exp(Var[comp] + sign * diffT)
+                    a = EOS.eos_parameters(acentric, Tc, ac, T)
+                    # Volume = EOS.calculate_mixing_rules(amix, bmix, comp, a, b, kij, lij, Composition, P, T, phase)
+                    fugacity_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
 
-                T = np.exp(Var[comp + 0] - diffT)
-                a = EOS.eos_parameters(acentric, Tc, ac, T) 
-                amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-                amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-                Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
-                dF[i_arr * (comp + 2) + comp] -= (FugCoef_aux - FugCoef_ref)
+                    if sign == -1:
+                        dF[i_arr * (comp + 2) + comp] -= fugacity_difference
+                    else:
+                        dF[i_arr * (comp + 2) + comp] = fugacity_difference
 
                 dF[(np.arange(comp) * (comp + 2) + comp)] /= (2.0 * diffT)
-
                 T = np.exp(Var[comp])
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
-                # OBS: The derivative ok ln(K) with respect to ln(T) is null.
-                # **********************************************************************************************************************
 
                 # Differentiating The First "C" Residuals With Respect to ln[P]/////////////////////////////////////////////////////////
                 diffP = diff * Var[comp + 1]
+                for ph in phase:
+                    amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
 
-                amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-                amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
+                # # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
+                for sign in [1, -1]:
+                    P = np.exp(Var[comp + 1] + sign * diffP)
+                    fugacity_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
 
-                # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
-                P = np.exp(Var[comp + 1] + diffP)
-                Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
-                dF[i_arr * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
-
-                P = np.exp(Var[comp + 1] - diffP)
-                Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
-                dF[i_arr * (comp + 2) + comp+1] -= (FugCoef_aux - FugCoef_ref)
+                    if sign == -1:
+                        dF[i_arr * (comp + 2) + comp + 1] -= fugacity_difference
+                    else:
+                        dF[i_arr * (comp + 2) + comp + 1] = fugacity_difference
 
                 dF[(i_arr * (comp + 2)) + comp + 1] /= 2.0 * diffP
 
-                # OBS: The derivative ok ln(K) with respect to ln(P) is null.
-                # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-
-                # Derivative of the "C+1" Residual With Respect to ln(T)****************************************************************
+                # Derivative of the "C+1" Residual With Respect to ln(T)
                 dF[comp * (comp + 2) + comp + 0] = 0.0
-                # **********************************************************************************************************************
 
-                # Derivative of the "C+1" Residual With Respect to ln(P)////////////////////////////////////////////////////////////////
+                # Derivative of the "C+1" Residual With Respect to ln(P)
                 dF[comp * (comp + 2) + comp + 1] = 0.0
-                # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-                # Derivative of the "C+2" Residual**************************************************************************************
+                # Derivative of the "C+2" Residual
                 dF[(comp + 1) * (comp + 2):] = 0.0
                 dF[(comp + 1) * (comp + 2) + SpecVar] = 1.0
 
-                # besides the specified variable are null. Its derivative with respect to the specified variable is 1.
-                # **********************************************************************************************************************
-
-                # Solving The System of Equations///////////////////////////////////////////////////////////////////////////////////////
-                # call GaussElimination(dF,F,step,comp+1)
+                # Solving The System of Equations
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
                 step = self.solve(A, F)
                 # step = np.linalg.solve(A, F)
@@ -205,7 +153,7 @@ class PhaseEnvelope:
 
                 # Calculating The Natural Form Of Indep# endent Variables And Updating Compositions Of The Incipient Phase////////////////
                 K = np.exp(Var[0:comp])
-                Composition[:,1] = Composition[:, 0] * K
+                Composition[:, 1] = Composition[:, 0] * K
                 T = np.exp(Var[comp + 0])
                 P = np.exp(Var[comp + 1])
 
@@ -213,13 +161,9 @@ class PhaseEnvelope:
 
             print("Incipient Phase = ", phase[1] + 1, "    P = ", P, "T = ", T, "SpecVar =", SpecVar)
 
-            if maxstep > tol:
+            if maxstep > tol or any(np.isnan(Var)):
                 flag_error = 1
-            else:
-                for i in range(comp + 2):
-                    if (Var[i] != Var[i]):  # then
-                        flag_error = 1
-                        exit()
+                # raise Exception("Something went wrong. Unable t oconverge")
 
             if flag_error == 0:
                 if flag_crit == 2:
@@ -231,128 +175,92 @@ class PhaseEnvelope:
                     "temperature": T,
                     "composition": list(Composition.flatten()),
                 })
-                # print(T, P)
 
                 # Analyzing Sensitivity Of The Indep# endent Variables************************************************************************
                 SpecVar_old = SpecVar
                 Var_old = Var
 
                 # Sensitivity Vector Calculation
-                # call GaussElimination(dF,dfdS,sensitivity,comp+1)
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
                 sensitivity = self.solve(A, dfdS)
-                # sensitivity = np.linalg.solve(A, dfdS)
 
-                if (flag_crit == 0):  # then
-                    # Choosing The New Specified Indep# endent Variable
-                    for i in range(comp + 2):
-                        if (np.abs(sensitivity[i]) > np.abs(sensitivity[SpecVar])):
-                            SpecVar = i
-                    # enddo
-                    # OBS: The specified variable is the one with the greatest sensitivity,
-                    # i.e. the one which its variation makes the system varies more intensely.
+                if flag_crit == 0:
+                    # Find the greatest sensitivity
+                    SpecVar = np.argmax(np.abs(sensitivity))
 
                     # Updating Specified Variable
-                    if (SpecVar != SpecVar_old):  # then
-                        dS = dS * sensitivity[SpecVar]
-                        for i in range(comp + 2):
-                            if (i != SpecVar):
-                                sensitivity[i] = sensitivity[i] / sensitivity[SpecVar]
-                        # enddo
+                    if SpecVar != SpecVar_old:
+                        s = sensitivity[SpecVar]
+                        dS *= s
+                        sensitivity /= s
                         sensitivity[SpecVar] = 1.0
                         S = Var[SpecVar]
-                    # endif
-                    # **************************************************************************************************************************
 
                     # Adjusting Stepsize////////////////////////////////////////////////////////////////////////////////////////////////////////
-                    dSmax = (np.abs(Var[SpecVar]) ** 0.5) / 10.0
-                    if (dSmax < 0.1):
-                        dSmax = 0.1
+                    dSmax = max(abs(Var[SpecVar]) ** 0.5 / 10.0, 0.1) * abs(dS) / dS
 
-                    dSmax = np.abs(dSmax) * (np.abs(dS) / dS)
-                    dS = dS * 4.0 / it
-                    if (np.abs(dSmax) < np.abs(dS)):
+                    dS *= 4.0 / it
+                    if np.abs(dSmax) < np.abs(dS):
                         dS = dSmax
+
                     # Defining Specified Variable Value In The Next Point
-                    S = S + dS
+                    S += dS
                     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                     # Indep# endent Variables Initial Guess For The Next Point********************************************************************
-                    for i in range(comp + 2):
-                        Var[i] = Var[i] + dS * sensitivity[i]
-                    # enddo
+                    Var += dS * sensitivity
+
                     # **************************************************************************************************************************
 
                     # Analyzing Temperature Stepsize////////////////////////////////////////////////////////////////////////////////////////////
                     T_old = T
                     T = np.exp(Var[comp + 0])
                     # Large Temperature Steps Are Not Advisable
-                    while (np.abs(T - T_old) > maxTstep):
-                        dS = dS / 2.0
-                        S = S - dS
-                        for i in range(comp + 2):
-                            Var[i] = Var[i] - dS * sensitivity[i]
-                        # enddo
-                        T = np.exp(Var[comp + 0])
-                    # enddo
+                    while abs(T - T_old) > maxTstep:
+                        dS *= 0.5
+                        S -= dS
+                        Var -= dS * sensitivity
+                        T = np.exp(Var[comp])
                     # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                     # Analyzing Proximity to Critical Point*************************************************************************************
                     # Seeking The Greatest K-factor
                     maxK_i = np.argmax(abs(Var[0:comp]))
                     # If The ln[K[i]] Stepsize Is Too Big, It Should Be Decreased
-                    if (np.abs(Var[maxK_i]) < 0.1):  # then
+                    if np.abs(Var[maxK_i]) < 0.1:
                         # Analyzing maxK stepsize
-                        if (np.abs(dS * sensitivity[maxK_i]) > K_CritPoint):  # then
-                            S = S - dS
-                            for i in range(comp + 2):
-                                Var[i] = Var[i] - dS * sensitivity[i]
-                            # enddo
+                        if np.abs(dS * sensitivity[maxK_i]) > K_CritPoint:  # then
+                            S -= dS
+                            Var -= dS * sensitivity
+                            dS *= K_CritPoint / abs(sensitivity[maxK_i]) / abs(dS)
+                            S += dS
+                            Var += dS * sensitivity
 
-                            # Shortening ln(K) Stepsize
-                            dS = (dS / abs(dS)) * K_CritPoint / abs(sensitivity[maxK_i])
-
-                            S = S + dS
-                            for i in range(comp + 2):
-                                Var[i] = Var[i] + dS * sensitivity[i]
-                            # enddo
-                        # endif
-                        # OBS: The current point must be near enough to the critical point
+                        # The current point must be near enough to the critical point
                         # so that the algorithm can pass through it without diverging.
 
-                        if (abs(Var[maxK_i]) < K_CritPoint):  # then
-                            # This is gonna be the last point before the critical point
-                            S = S - dS
-                            for i in range(comp + 2):
-                                Var[i] = Var[i] - dS * sensitivity[i]
-                            # enddo
-
+                        if abs(Var[maxK_i]) < K_CritPoint:
+                            # last point before the critical point
+                            S -= dS
+                            Var -= dS * sensitivity
                             dS = (K_CritPoint - Var[maxK_i]) / sensitivity[maxK_i]
 
-                            S = S + dS
-                            for i in range(comp + 2):
-                                Var[i] = Var[i] + dS * sensitivity[i]
-                            # enddo
+                            S += dS
+                            Var -= dS * sensitivity
                             flag_crit = 1
-                        # endif
-                    # endif
+
                 else:
                     # Passing Through The Critical Point
                     dS = K_CritPoint * dS / abs(dS)
-                    S = S + 2. * dS
-                    for i in range(comp + 2):
-                        Var[i] = Var[i] + 2. * dS * sensitivity[i]
-                    # enddo
+                    S += 2.0 * dS
+                    Var += 2.0 * dS * sensitivity
 
                     # Defining Incipient Phase As Vapor - Initializing Bubble Curve
+                    # flip the K-factors
                     phase_aux = phase[0]
                     phase[0] = phase[1]
                     phase[1] = phase_aux
-                    # OBS: This will cause the definition of the K-factors to change from
-                    # FugCoef(Vap phase)/FugCoef(Liq phase) to FugCoef(Liq phase)/FugCoef(Vap phase).
-
                     flag_crit = 2
-                # endif
 
             elif flag_error == 1 and flag_crit == 2 and K_CritPoint > 0.009:
                 # TODO Porbably unused?
@@ -365,16 +273,17 @@ class PhaseEnvelope:
                 dS = (K_CritPoint - Var[maxK_i]) / sensitivity[maxK_i]
 
                 S = S + dS
-                Var[:comp + 2] += dS * sensitivity[:comp + 2]
+                Var += dS * sensitivity
                 flag_crit = 1
                 flag_error = 0
 
             elif flag_error == 1 and flag_crit == 0 and abs(dS) > 1e-6:
+                # TODO Porbably unused?
                 Var = Var_old
                 S = Var[SpecVar]
                 dS = dS / 4.0
                 S = S + dS
-                Var[:comp + 2] += dS * sensitivity[:comp + 2]
+                Var += dS * sensitivity
                 flag_error = 0
 
             K = np.exp(Var[0:comp])
@@ -385,9 +294,29 @@ class PhaseEnvelope:
 
         return phase_envelope_results
 
-
     @staticmethod
-    def solve(A:np.ndarray, b: np.ndarray):
-        return np.linalg.solve(A, b)
-    # return np.linalg.lstsq(A, b)
-    #return np.dot(np.linalg.inv(A), b)
+    def solve(matrix: np.ndarray, b: np.ndarray):
+        return np.linalg.solve(matrix, b)
+    def differentiate_first_c_residuals_lnK(self, comp, diff, Composition, amix, bmix, a, b, kij, lij, Volume, P, T, phase, dF):
+        for i in range(comp):
+            for j in range(comp):
+                diffFrac = diff * Composition[j, 1]
+                aux = Composition[j, 1]
+
+                # Numerically Differentiating the Fugacity Coefficient of the Incipient Phase
+                for sign in [1, -1]:
+                    Composition[j, 1] = aux + sign * diffFrac
+                    amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])
+                    Volume[1] = EOS.EoS_Volume(P, T, bmix[1], amix[1], phase[1])
+                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
+
+                    dF[i * (comp + 2) + j] = FugCoef_aux if sign == 1 else dF[i * (comp + 2) + j] - FugCoef_aux
+
+                # Derivative of ln[FugacityCoefficient(IncipientPhase,Component i)] With Respect to ln[K(j)]
+                dF[i * (comp + 2) + j] *= Composition[j, 1] / (2.0 * diffFrac)
+
+                # Derivative of ln[K[i]] With Respect to ln[K(j)] = Kronecker Delta
+                if i == j:
+                    dF[i * (comp + 2) + j] += 1.0
+
+                Composition[j, 1] = aux  # reset Composition[j, 1] to its original value

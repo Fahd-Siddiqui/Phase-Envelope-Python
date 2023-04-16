@@ -38,15 +38,13 @@ class EOS:
         return amix, bmix
 
     @classmethod
-    def Eos_Volumes(cls, P: float, T: float, amix: np.ndarray, bmix: np.ndarray, phase: list) -> np.ndarray:
-        num_phases = len(phase)
-        Volume = np.zeros(num_phases)
-        for i in range(num_phases):
-            Volume[i] = cls.EoS_Volume(P, T, bmix[i], amix[i], phase[i])
+    def Eos_Volumes(cls, P: float, T: float, amix: np.ndarray, bmix: np.ndarray, phase: np.ndarray) -> np.ndarray:
+        Volume = np.zeros(len(phase))
+        for ph in phase:
+            Volume[ph] = cls.EoS_Volume(P, T, bmix[ph], amix[ph], phase[ph])
 
         return Volume
 
-    @classmethod
     @classmethod
     def EoS_Volume(cls, P: float, T: float, bmix: float, amix: float, root: int) -> float:
         R = Constants.R
@@ -88,10 +86,26 @@ class EOS:
         return FugCoef
 
     @classmethod
-    def calculate_fugacity_coefs(cls, comp, T, P, a, b, amix, bmix, volume, Composition, kij, lij):
+    def calculate_fugacity_coefs2(cls, comp, T, P, a, b, amix, bmix, volume, Composition, kij, lij):
         # TODO Instead of using 0,1 implement Phase
         fug_func = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[0], bmix[0], volume[0], Composition[:, 0], kij[i, :], lij[i, :], i), 1, 1)
-        fug_coef_ref = fug_func(np.arange(comp))
+        fug_coef_ref = fug_func(np.arange(comp)).astype('float64')
         fug_func = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[1], bmix[1], volume[1], Composition[:, 1], kij[i, :], lij[i, :], i), 1, 1)
-        fug_coef_aux = fug_func(np.arange(comp))
-        return fug_coef_ref.astype('float64'), fug_coef_aux.astype('float64')
+        fug_coef_aux = fug_func(np.arange(comp)).astype('float64')
+        difference = fug_coef_aux - fug_coef_ref
+        return fug_coef_ref, fug_coef_aux, difference
+
+    @classmethod
+    def calculate_mixing_rules(cls, amix, bmix, comp, a,b, kij,lij, composition, P,T, phase):
+        amix[0], bmix[0] = cls.VdW1fMIX(comp, a, b, kij, lij, composition[:, 0])  # Mixing Rule - Reference Phase
+        amix[1], bmix[1] = cls.VdW1fMIX(comp, a, b, kij, lij, composition[:, 1])  # Mixing Rule - Incipient Phase
+        volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
+        return volume
+
+    @classmethod
+    def fugacity_vec(cls, T, P, a, b, amix, bmix, volume, Composition, kij, lij):
+        return np.frompyfunc(lambda i, phase_number: EOS.fugacity(T, P, a, b, amix[phase_number], bmix[phase_number], volume[phase_number], Composition[:, phase_number], kij[i, :], lij[i, :], i), 2, 1)
+
+    @classmethod
+    def VdW1fMIX_vec(cls, comp, a, b, kij, lij, MoleFrac):
+        return np.frompyfunc(lambda i: EOS.VdW1fMIX(comp, a, b, kij, lij, MoleFrac[: i]), nin=1, nout=2)

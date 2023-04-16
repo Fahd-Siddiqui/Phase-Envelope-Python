@@ -1,5 +1,6 @@
 import numpy as np
 
+from PhaseEnvelope.src.calculator import Calculator
 from PhaseEnvelope.src.eos import EOS
 
 
@@ -69,27 +70,24 @@ class SuccessiveSubstitution:
 
         return temperature
 
-    @staticmethod
-    def calculate_temperature_diff(T_old, diff, acentric, Tc, ac, comp, a, b, kij, lij, Composition, P, amix, bmix, phase, K, dF):
-        amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-        amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
+    @classmethod
+    def calculate_temperature_diff(cls, T_old, diff, acentric, Tc, ac, comp, a, b, kij, lij, Composition, P, amix, bmix, phase, K, dF):
+        for ph in phase:
+            amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
 
         for sign in [-1, 1]:
             T = T_old + sign * diff
             a = EOS.eos_parameters(acentric, Tc, ac, T)
-            volume = EOS.Eos_Volumes(P, T, amix, bmix, phase)
-            fug_coef_ref = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[0], bmix[0], volume[0], Composition[:, 0], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-            fug_coef_aux = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[1], bmix[1], volume[1], Composition[:, 1], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-            dF[0] += sign * np.sum(Composition[:, 0] * K * (fug_coef_ref - fug_coef_aux))
+            fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
+            dF[0] += sign * np.sum(Composition[:, 0] * K * (-fugacity_coef_difference))
 
         return dF
 
-    @staticmethod
-    def update_k_factors(T, P, comp, a, b, kij, lij, Composition, amix, bmix, phase):
-        amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-        amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-        volume = EOS.Eos_Volumes(P, T, amix, bmix, phase)
-        fug_coef_ref = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[0], bmix[0], volume[0], Composition[:, 0], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-        fug_coef_aux = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[1], bmix[1], volume[1], Composition[:, 1], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-        K = np.exp(list(fug_coef_ref - fug_coef_aux))
+    @classmethod
+    def update_k_factors(cls, T, P, comp, a, b, kij, lij, Composition, amix, bmix, phase):
+        for ph in phase:
+            amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
+
+        fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
+        K = np.exp(-fugacity_coef_difference)
         return K
