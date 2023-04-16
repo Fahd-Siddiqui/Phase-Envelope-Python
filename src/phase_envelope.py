@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 
 from src.Constants import Constants
@@ -8,6 +10,19 @@ from src.calculator import Calculator
 
 
 class PhaseEnvelope:
+
+    def __init__(self, logging_level: str = ""):
+        if not logging_level:
+            logging_level=logging.ERROR
+
+        self.logger = logging.getLogger(name="Phase Envelope")
+        self.logger.setLevel(logging_level)
+
+        console_handler = logging.StreamHandler()
+
+        log_format = '%(asctime)s | %(levelname)s: %(message)s'
+        console_handler.setFormatter(logging.Formatter(log_format))
+        self.logger.addHandler(console_handler)
 
     def calculate(self, T, P, comp, z, Tc, Pc, acentric):
         amix = np.zeros(2)
@@ -144,7 +159,7 @@ class PhaseEnvelope:
                 step = self.solve(A, F)
                 # step = np.linalg.solve(A, F)
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
-                # print( "VAR", Var, "K", K, "P", P, "T", T, "step", step, "Var_old", Var_old
+                # self.logger.debug( "VAR", Var, "K", K, "P", P, "T", T, "step", step)
 
                 # Updating The Independent Variables************************************************************************************
                 Var = Var - step
@@ -159,7 +174,7 @@ class PhaseEnvelope:
 
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-            print("Incipient Phase = ", phase[1] + 1, "    P = ", P, "T = ", T, "SpecVar =", SpecVar)
+            # self.logger.info("Incipient Phase = ", phase[1] + 1, "    P = ", P, "T = ", T, "SpecVar =", SpecVar)
 
             if maxstep > tol or any(np.isnan(Var)):
                 flag_error = 1
@@ -169,12 +184,18 @@ class PhaseEnvelope:
                 if flag_crit == 2:
                     flag_crit = 0
 
-                print(phase[0] + 1, ",", P, ",", T, ",", (Composition[1, 1], ",", 1, comp))
-                phase_envelope_results.append({
+                # self.logger.info(f"{phase[0] + 1}, {P}, {T}, {Composition[1, 1]} {comp}")
+                current_phase = "vapor" if phase[0] == 0 else "liquid"
+                results = {
+                    "phase": current_phase,
                     "pressure": P,
                     "temperature": T,
                     "composition": list(Composition.flatten()),
-                })
+                }
+
+                self.logger.info(f"{results}")
+
+                phase_envelope_results.append(results)
 
                 # Analyzing Sensitivity Of The Indep# endent Variables************************************************************************
                 SpecVar_old = SpecVar
