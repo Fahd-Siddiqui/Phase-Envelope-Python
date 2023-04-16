@@ -1,23 +1,23 @@
-import numpy
 import numpy as np
 
+from PhaseEnvelope.src.Constants import Constants
 from PhaseEnvelope.src.eos import EOS
+from PhaseEnvelope.src.successive_substitution import SuccessiveSubstitution
+
 
 class PhaseEnvelope:
 
-    #@numba.jit(nopython=True)
-    def calculate(self, comp, z, Tc, Pc, acentric):
-        R = 83.14462175  # cm³.bar/(mol.K)
-        Volume = np.zeros(2)
+    def calculate(self, T, P, comp, z, Tc, Pc, acentric):
+        # TODO Delete
+        # b = np.zeros(comp)
+        # ac = np.zeros(comp)
+        # K = np.zeros(comp)
+
         amix = np.zeros(2)
         bmix = np.zeros(2)
 
         phase_envelope_results = []
 
-        b = np.zeros(comp)
-        ac = np.zeros(comp)
-
-        K = np.zeros(comp)
         Composition = np.zeros((comp, comp))
         kij = np.zeros((comp, comp))
         lij = np.zeros((comp, comp))
@@ -32,23 +32,9 @@ class PhaseEnvelope:
         #   1         temperature     #
         #   1          pressure       #
 
-        # Reading And Calculating Properties********************************************************************************************
-        aux = 0.0
-        for i in range(comp):
-            # Reading Global Composition, Critical Temperature, Critical Pressure and Acentric Factor
-            # read(input_num,*) z[i], Tc[i], Pc[i], acentric[i]
-
-            # EoS Parameters Calculation
-            b[i] = 0.07780 * R * Tc[i] / Pc[i]  # covolume
-            ac[i] = 0.45724 * R * R * Tc[i] * Tc[i] / Pc[i]
-            aux = aux + z[i]
-        # enddo
-
-        # ******************************************************************************************************************************
-
-        # Initial Settings - Dew point ///////////////////////////////////////////////////////////////////////////////////////////////////
-        T = 80.0  # Initial Temperature Guess (K)
-        P = 0.5  # Initial Pressure (bar)
+        # EoS Parameters Calculation
+        b = 0.07780 * Constants.R * Tc / Pc  # covolume
+        ac = 0.45724 * Constants.R ** 2 * Tc * Tc / Pc
 
         K= np.exp(5.373 * (1.0 + acentric) * (1.0 - Tc / T)) * (Pc / P)  # Whitson's Approach for Vapor-Liquid Equilibria
         z = z / sum(z)  # Normalizing Global Composition
@@ -57,103 +43,13 @@ class PhaseEnvelope:
         phase = [0, 1]
         # phase[0] = 0 #Reference Phase Index (Vapor)
         # phase[1] = 1 #Incipient Phase Index (Liquid)
-        # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        # Determining Temperature Initial Guess (Point Near To The Dew Curve)***********************************************************
-        T_old = T - 1.0
-        while (T_old != T):
-            T_old = T
-
-            a = EOS.eos_parameters(acentric, Tc, ac, T)  # Updating Attractive Parameter
-            amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, z)  # Mixing Rule
-            amix[1], bmix[1] = amix[0], bmix[0]
-
-            Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-            Gibbs_vap = 0.0
-            Gibbs_liq = 0.0
-            for i in range(comp):
-                FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], z, kij[i, :], lij[i, :], i)
-                Gibbs_vap = Gibbs_vap + z[i] * FugCoef_ref
-                FugCoef_aux = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[1], z, kij[i, :], lij[i, :], i)
-                Gibbs_liq = Gibbs_liq + z[i] * FugCoef_aux
-            # enddo
-
-            # If Exists A Pure Liquid Or A Liquid-Vapor Equilibrium Nearer To The Bubble Point
-            # Than To The Dew Point, The Temperature Is Increased.
-            if ((Gibbs_liq < Gibbs_vap) or (Gibbs_liq == Gibbs_vap and (Volume[0] / bmix[0]) < 1.75)):  # then
-                T = T + 10.0
-            # endif
-            # OBS: The test comparing the ratio between the volume and the covolume to the constant factor 1.75 was proposed by
-            # Pedersen and Christensen (Phase Behavior Of Petroleum Reservoir Fluids, 2007 - Chapter 6.5 Phase Identification)
-        # enddo
-        # ******************************************************************************************************************************
-
-        # Successive Substitution///////////////////////////////////////////////////////////////////////////////////////////////////////
         tol = 1.0e-8
         diff = 1.0e-8
         step[0] = 1.0e+6
-        maxit = 100
-        it = 0
-        while (np.abs(step[0]) > tol and it < maxit):
-            it = it + 1
-            T_old = T
+        ss = SuccessiveSubstitution(iterations_max=100, tol=tol, diff=diff)
+        T, K = ss.run(step, T, acentric, Tc, ac, comp, z, b, kij, lij, Composition, P, amix, bmix, phase, K, F, dF)
 
-            Composition[:, 1] = Composition[:, 0] * K
-            F[0] = sum(Composition[:, 1]) - 1.0
-            dF[0] = 0.0
-
-            # Numerical Derivative With Respect to Temperature
-            T = T_old + diff
-            a = EOS.eos_parameters(acentric, Tc, ac, T)  # Updating Attractive Parameter
-            amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-            amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-            Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-            for i in range(comp):
-                FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                dF[0] = dF[0] + Composition[i, 0] * K[i] * (FugCoef_ref - FugCoef_aux)
-            # enddo
-
-            T = T_old - diff
-            a = EOS.eos_parameters(acentric, Tc, ac, T)   # Updating Attractive Parameter
-            amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-            amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-            Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-            for i in range(comp):
-                FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                dF[0] = dF[0] - Composition[i, 0] * K[i] * (FugCoef_ref - FugCoef_aux)
-            # enddo
-
-            dF[0] = dF[0] / (2.0 * diff)
-
-            # Temperature Step Calculation
-            step[0] = F[0] / dF[0]
-
-            # Step Brake
-            if (np.abs(step[0]) > 0.25 * T_old):
-                step[0] = 0.25 * T_old * step[0] / np.abs(step[0])
-
-                # Updating Temperature
-            T = T_old - step[0]
-
-            # Updating K-factors
-            a = EOS.eos_parameters(acentric, Tc, ac, T)
-            amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
-            amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
-            Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-            for i in range(comp):
-                FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                K[i] = np.exp(FugCoef_ref - FugCoef_aux)
-            # enddo
-        # enddo
-
-        if (it == maxit and np.abs(step[0]) > tol):  # then
-            print("WARNING: In Successive Substitution Method - Maximum Number of Iterations Reached#")
-            print("Exiting Program...")
-            exit()
-        # endif
         # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
         # Continuation Method And Newton's Method Settings******************************************************************************
@@ -182,19 +78,24 @@ class PhaseEnvelope:
                 it = it + 1
 
                 # Calculating Residuals/////////////////////////////////////////////////////////////////////////////////////////////////
-                a = EOS.eos_parameters(acentric, Tc, ac, T) 
+                a = EOS.eos_parameters(acentric, Tc, ac, T)
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                F[comp + 0] = 0.0
+                F[comp] = 0.0
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                     FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
                     # Residual Responsible For The Chemical Equilibrium
                     F[i] = Var[i] + (FugCoef_aux - FugCoef_ref)
-                    # Residual Responsible For Assuring That The Summation Of The Incipient Phase Equals 1
-                    F[comp + 0] = F[comp + 0] + Composition[i, 1] - Composition[i, 0]
-                    # enddo
+
+
+                # TODO The above loop should be equal to following, investigate
+                #  FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                #  F[0:comp] = Var[0:comp] + FugCoef_aux[0:comp] - FugCoef_ref[0:comp]
+
+                F[comp] = np.sum(Composition[:, 1] - Composition[:, 0])
+
                 # Residual Responsible For Determining The Specified Indep# endent Variable
                 F[comp + 1] = Var[SpecVar] - S
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -216,30 +117,28 @@ class PhaseEnvelope:
                         amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
                         Volume[1] = EOS.EoS_Volume(P, T, bmix[1], amix[1], phase[1])
                         FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                        dF[(i) * (comp + 2) + j] = dF[(i) * (comp + 2) + j] - FugCoef_aux
+                        dF[(i) * (comp + 2) + j] -= FugCoef_aux
 
                         Composition[j, 1] = aux
                         # Derivative of ln[FugacityCoefficient(IncipientPhase,Component i)] With Respect to ln[K(j)]
-                        dF[(i) * (comp + 2) + j] = dF[(i) * (comp + 2) + j] * Composition[j, 1] / (2.0 * diffFrac)
+                        dF[(i) * (comp + 2) + j] *= Composition[j, 1] / (2.0 * diffFrac)
 
                         # Derivative of ln[K[i]] With Respect to ln[K(j)] = Kronecker Delta
-                        if (i == j):
-                            dF[(i) * (comp + 2) + j] = dF[(i) * (comp + 2) + j] + 1.0
-                    # enddo
-                # enddo
+                        if i == j:
+                            dF[i * (comp + 2) + j] += 1.0
+
                 # **********************************************************************************************************************
 
                 # Differentiating "C+1" Residual With Respect to ln[K[i]]///////////////////////////////////////////////////////////////
-                for i in range(comp):
-                    dF[comp * (comp + 2) + i] = Composition[i, 1]
-                # enddo
+                dF[comp * (comp + 2):comp * (comp + 2) + comp] = Composition[:, 1]
+
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 # Differentiating The First "C" Residuals With Respect to ln[T]*********************************************************
-                diffT = diff * Var[comp + 0]
+                diffT = diff * Var[comp]
 
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
-                T = np.exp(Var[comp + 0] + diffT)
+                T = np.exp(Var[comp] + diffT)
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
@@ -247,8 +146,7 @@ class PhaseEnvelope:
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                     FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[(i) * (comp + 2) + comp + 0] = FugCoef_aux - FugCoef_ref
-                # enddo
+                    dF[i * (comp + 2) + comp] = FugCoef_aux - FugCoef_ref
 
                 T = np.exp(Var[comp + 0] - diffT)
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
@@ -258,14 +156,11 @@ class PhaseEnvelope:
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                     FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[(i) * (comp + 2) + comp + 0] = dF[(i) * (comp + 2) + comp + 0] - (FugCoef_aux - FugCoef_ref)
-                # enddo
+                    dF[i * (comp + 2) + comp] -= (FugCoef_aux - FugCoef_ref)
 
-                for i in range(comp):
-                    dF[(i) * (comp + 2) + comp + 0] = dF[(i) * (comp + 2) + comp + 0] / (2.0 * diffT)
-                # enddo
+                dF[(np.arange(comp) * (comp + 2) + comp)] /= (2.0 * diffT)
 
-                T = np.exp(Var[comp + 0])
+                T = np.exp(Var[comp])
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 # OBS: The derivative ok ln(K) with respect to ln(T) is null.
                 # **********************************************************************************************************************
@@ -282,19 +177,16 @@ class PhaseEnvelope:
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                     FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[(i) * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
-                # enddo
+                    dF[i * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
 
                 P = np.exp(Var[comp + 1] - diffP)
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
                 for i in range(comp):
                     FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
                     FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[(i) * (comp + 2) + comp + 1] = dF[(i) * (comp + 2) + comp + 1] - (FugCoef_aux - FugCoef_ref)
-                # enddo
-                for i in range(comp):
-                    dF[(i) * (comp + 2) + comp + 1] = dF[(i) * (comp + 2) + comp + 1] / (2.0 * diffP)
-                # enddo
+                    dF[i * (comp + 2) + comp + 1] -= (FugCoef_aux - FugCoef_ref)
+
+                dF[(np.arange(comp) * (comp + 2)) + comp + 1] /= 2.0 * diffP
 
                 # OBS: The derivative ok ln(K) with respect to ln(P) is null.
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
@@ -308,24 +200,22 @@ class PhaseEnvelope:
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
                 # Derivative of the "C+2" Residual**************************************************************************************
-                for i in range(comp + 2):
-                    dF[(comp + 1) * (comp + 2) + i] = 0.0
-                # enddo
+                dF[(comp + 1) * (comp + 2):] = 0.0
                 dF[(comp + 1) * (comp + 2) + SpecVar] = 1.0
-                # OBS: The derivative of the specification equation with respect to all indep# endent variables
+
                 # besides the specified variable are null. Its derivative with respect to the specified variable is 1.
                 # **********************************************************************************************************************
 
                 # Solving The System of Equations///////////////////////////////////////////////////////////////////////////////////////
                 # call GaussElimination(dF,F,step,comp+1)
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
-                #step = solve(A, F)
-                step = np.linalg.solve(A,F)
+                step = self.solve(A, F)
+                # step = np.linalg.solve(A, F)
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
                 # print( "VAR", Var, "K", K, "P", P, "T", T, "step", step, "Var_old", Var_old
 
                 # Updating The Independent Variables************************************************************************************
-                Var = Var-step
+                Var = Var - step
                 maxstep = max(abs(step/Var))
                 # **********************************************************************************************************************
 
@@ -337,10 +227,9 @@ class PhaseEnvelope:
 
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-            # write(*,*) "Incipient Phase = ",leg# end_ELV(phase[1]+1),"    P = ",P,"T = ",T, "SpecVar =",SpecVar
             print("Incipient Phase = ", phase[1] + 1, "    P = ", P, "T = ", T, "SpecVar =", SpecVar)
 
-            if (maxstep > tol):  # then
+            if maxstep > tol:
                 flag_error = 1
             else:
                 for i in range(comp + 2):
@@ -348,8 +237,8 @@ class PhaseEnvelope:
                         flag_error = 1
                         exit()
 
-            if (flag_error == 0):  # then
-                if (flag_crit == 2):
+            if flag_error == 0:
+                if flag_crit == 2:
                     flag_crit = 0
 
                 print(phase[0] + 1, ",", P, ",", T, ",", (Composition[1, 1], ",", 1, comp))
@@ -367,8 +256,8 @@ class PhaseEnvelope:
                 # Sensitivity Vector Calculation
                 # call GaussElimination(dF,dfdS,sensitivity,comp+1)
                 A = dF.reshape(((comp + 2), (comp + 2)), order="C")
-                #sensitivity = solve(A, dfdS)
-                sensitivity = np.linalg.solve(A, dfdS)
+                sensitivity = self.solve(A, dfdS)
+                # sensitivity = np.linalg.solve(A, dfdS)
 
                 if (flag_crit == 0):  # then
                     # Choosing The New Specified Indep# endent Variable
@@ -481,7 +370,8 @@ class PhaseEnvelope:
                     flag_crit = 2
                 # endif
 
-            elif (flag_error == 1 and flag_crit == 2 and K_CritPoint > 0.009):  # then
+            elif flag_error == 1 and flag_crit == 2 and K_CritPoint > 0.009:
+                # TODO Porbably unused?
                 K_CritPoint = K_CritPoint - 0.005
                 Var = Var_old
                 S = Var[SpecVar]
@@ -491,42 +381,29 @@ class PhaseEnvelope:
                 dS = (K_CritPoint - Var[maxK_i]) / sensitivity[maxK_i]
 
                 S = S + dS
-                for i in range(comp + 2):
-                    Var[i] = Var[i] + dS * sensitivity[i]
-                # enddo
-
+                Var[:comp + 2] += dS * sensitivity[:comp + 2]
                 flag_crit = 1
                 flag_error = 0
-            elif (flag_error == 1 and flag_crit == 0 and abs(dS) > 1e-6):  # then
+
+            elif flag_error == 1 and flag_crit == 0 and abs(dS) > 1e-6:
                 Var = Var_old
                 S = Var[SpecVar]
-                dS = dS / 4.
-
+                dS = dS / 4.0
                 S = S + dS
-                for i in range(comp + 2):
-                    Var[i] = Var[i] + dS * sensitivity[i]
-                # enddo
-
+                Var[:comp + 2] += dS * sensitivity[:comp + 2]
                 flag_error = 0
-            # endif
 
-            for i in range(comp):
-                K[i] = np.exp(Var[i])
-                Composition[i, 1] = Composition[i, 0] * K[i]
-            # enddo
+            K = np.exp(Var[0:comp])
+            Composition[:, 1] = Composition[:, 0] * K
+
             T = np.exp(Var[comp + 0])
             P = np.exp(Var[comp + 1])
-        # enddo #End of  the main loop
 
         return phase_envelope_results
 
-    #@staticmethod
-    #@numba.njit()
-    #def solve(A:np.ndarray, b: np.ndarray):
 
-#@numba.jit()
-
-def solve(A:np.ndarray, b: np.ndarray):
-    return np.linalg.solve(A, b)
+    @staticmethod
+    def solve(A:np.ndarray, b: np.ndarray):
+        return np.linalg.solve(A, b)
     # return np.linalg.lstsq(A, b)
     #return np.dot(np.linalg.inv(A), b)
