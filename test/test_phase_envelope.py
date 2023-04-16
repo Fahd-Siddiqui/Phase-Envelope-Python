@@ -121,11 +121,11 @@ class TestPhaseEnvelope(unittest.TestCase):
         acentric = numpy.array([0.2236, 0.7174])
         comp = 2
 
-        pe = PhaseEnvelope(logging_level="INFO")
+        pe = PhaseEnvelope(logging_level="DEBUG")
         T = 80.0  # Initial Temperature Guess (K)
         P = 0.5  # Initial Pressure (bar)
 
-        res = pe.calculate(T, P, comp, z, Tc, Pc, acentric)
+        res = pe.calculate(T, P, z, Tc, Pc, acentric)
         self.rounder(expected_res)
         self.rounder(res)
         self.assertListEqual(expected_res, res)

@@ -1,4 +1,5 @@
 import logging
+import time
 
 import numpy as np
 
@@ -13,10 +14,10 @@ class PhaseEnvelope:
 
     def __init__(self, logging_level: str = ""):
         if not logging_level:
-            logging_level=logging.ERROR
+            logging_level = "ERROR"
 
         self.logger = logging.getLogger(name="Phase Envelope")
-        self.logger.setLevel(logging_level)
+        self.logger.setLevel(logging_level.upper())
 
         console_handler = logging.StreamHandler()
 
@@ -24,7 +25,22 @@ class PhaseEnvelope:
         console_handler.setFormatter(logging.Formatter(log_format))
         self.logger.addHandler(console_handler)
 
-    def calculate(self, T, P, comp, z, Tc, Pc, acentric):
+    def calculate(self, T, P, z, Tc, Pc, acentric):
+        z = np.array(z)
+        Tc = np.array(Tc)
+        Pc = np.array(Pc)
+        acentric = np.array(acentric)
+
+        start_time = time.perf_counter()
+        res = self._calculate(T, P, z, Tc, Pc, acentric)
+        process_time = round(time.perf_counter() - start_time, 2)
+
+        self.logger.info(f"Time taken {process_time} s")
+
+        return res
+
+    def _calculate(self, T, P, z, Tc, Pc, acentric):
+        comp = len(z)
         amix = np.zeros(2)
         bmix = np.zeros(2)
 
@@ -187,13 +203,13 @@ class PhaseEnvelope:
                 # self.logger.info(f"{phase[0] + 1}, {P}, {T}, {Composition[1, 1]} {comp}")
                 current_phase = "vapor" if phase[0] == 0 else "liquid"
                 results = {
-                    "phase": current_phase,
+                    # "phase": current_phase,
                     "pressure": P,
                     "temperature": T,
                     "composition": list(Composition.flatten()),
                 }
 
-                self.logger.info(f"{results}")
+                self.logger.debug(f"{results}")
 
                 phase_envelope_results.append(results)
 
