@@ -2,7 +2,7 @@ import unittest
 
 import numpy
 
-from PhaseEnvelope.src.eos import EOS
+from src.eos import EOS
 
 
 class MyTestCase(unittest.TestCase):

@@ -2,10 +2,10 @@ import unittest
 
 import numpy
 
-from PhaseEnvelope.src.eos import EOS
+from src.eos import EOS
 
-from PhaseEnvelope.src.phase_envelope import PhaseEnvelope
-from PhaseEnvelope.src.successive_substitution import SuccessiveSubstitution
+from src.phase_envelope import PhaseEnvelope
+from src.successive_substitution import SuccessiveSubstitution
 
 
 class MyTestCase(unittest.TestCase):

@@ -1,7 +1,7 @@
 import numpy as np
 
-from PhaseEnvelope.src.calculator import Calculator
-from PhaseEnvelope.src.eos import EOS
+from src.calculator import Calculator
+from src.eos import EOS
 
 
 class SuccessiveSubstitution:

@@ -1,6 +1,6 @@
 import numpy as np
 
-from PhaseEnvelope.src.eos import EOS
+from src.eos import EOS
 
 
 class Calculator:

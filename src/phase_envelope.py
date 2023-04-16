@@ -1,10 +1,10 @@
 import numpy as np
 
-from PhaseEnvelope.src.Constants import Constants
-from PhaseEnvelope.src.eos import EOS
-from PhaseEnvelope.src.successive_substitution import SuccessiveSubstitution
-from PhaseEnvelope.src.utils import Utils
-from PhaseEnvelope.src.calculator import Calculator
+from src.Constants import Constants
+from src.eos import EOS
+from src.successive_substitution import SuccessiveSubstitution
+from src.utils import Utils
+from src.calculator import Calculator
 
 
 class PhaseEnvelope:

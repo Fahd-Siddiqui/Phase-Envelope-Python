@@ -1,7 +1,7 @@
 import numpy as np
 
-from PhaseEnvelope.src.Constants import Constants
-from PhaseEnvelope.src.utils import Utils
+from src.Constants import Constants
+from src.utils import Utils
 
 
 class EOS:
