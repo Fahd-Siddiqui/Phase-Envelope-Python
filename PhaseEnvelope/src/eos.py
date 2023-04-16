@@ -90,6 +90,8 @@ class EOS:
     @classmethod
     def calculate_fugacity_coefs(cls, comp, T, P, a, b, amix, bmix, volume, Composition, kij, lij):
         # TODO Instead of using 0,1 implement Phase
-        fug_coef_ref = np.frompyfunc(lambda i: cls.fugacity(T, P, a, b, amix[0], bmix[0], volume[0], Composition[:, 0], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-        fug_coef_aux = np.frompyfunc(lambda i: cls.fugacity(T, P, a, b, amix[1], bmix[1], volume[1], Composition[:, 1], kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-        return fug_coef_ref, fug_coef_aux
+        fug_func = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[0], bmix[0], volume[0], Composition[:, 0], kij[i, :], lij[i, :], i), 1, 1)
+        fug_coef_ref = fug_func(np.arange(comp))
+        fug_func = np.frompyfunc(lambda i: EOS.fugacity(T, P, a, b, amix[1], bmix[1], volume[1], Composition[:, 1], kij[i, :], lij[i, :], i), 1, 1)
+        fug_coef_aux = fug_func(np.arange(comp))
+        return fug_coef_ref.astype('float64'), fug_coef_aux.astype('float64')

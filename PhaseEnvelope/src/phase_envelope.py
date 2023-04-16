@@ -22,7 +22,7 @@ class PhaseEnvelope:
         kij = np.zeros((comp, comp))
         lij = np.zeros((comp, comp))
 
-        dF = np.zeros((comp + 2) ** 2)
+        dF = np.zeros((comp + 2) ** 2, dtype=np.float64)
         step = np.zeros(comp + 2)
         sensitivity = np.zeros(comp + 2)
         F = np.zeros(comp + 2)
@@ -82,18 +82,8 @@ class PhaseEnvelope:
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                F[comp] = 0.0
-                for i in range(comp):
-                    FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    # Residual Responsible For The Chemical Equilibrium
-                    F[i] = Var[i] + (FugCoef_aux - FugCoef_ref)
-
-
-                # TODO The above loop should be equal to following, investigate
-                #  FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
-                #  F[0:comp] = Var[0:comp] + FugCoef_aux[0:comp] - FugCoef_ref[0:comp]
-
+                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                F[0:comp] = Var[0:comp] + FugCoef_aux - FugCoef_ref
                 F[comp] = np.sum(Composition[:, 1] - Composition[:, 0])
 
                 # Residual Responsible For Determining The Specified Indep# endent Variable
@@ -143,20 +133,18 @@ class PhaseEnvelope:
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                for i in range(comp):
-                    FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[i * (comp + 2) + comp] = FugCoef_aux - FugCoef_ref
+
+                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                i_arr = np.arange(comp)
+                dF[i_arr * (comp + 2) + comp] = FugCoef_aux - FugCoef_ref
 
                 T = np.exp(Var[comp + 0] - diffT)
                 a = EOS.eos_parameters(acentric, Tc, ac, T) 
                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                for i in range(comp):
-                    FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[i * (comp + 2) + comp] -= (FugCoef_aux - FugCoef_ref)
+                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                dF[i_arr * (comp + 2) + comp] -= (FugCoef_aux - FugCoef_ref)
 
                 dF[(np.arange(comp) * (comp + 2) + comp)] /= (2.0 * diffT)
 
@@ -174,19 +162,15 @@ class PhaseEnvelope:
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
                 P = np.exp(Var[comp + 1] + diffP)
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                for i in range(comp):
-                    FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[i * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
+                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                dF[i_arr * (comp + 2) + comp + 1] = FugCoef_aux - FugCoef_ref
 
                 P = np.exp(Var[comp + 1] - diffP)
                 Volume = EOS.Eos_Volumes(P,T,amix, bmix, phase)
-                for i in range(comp):
-                    FugCoef_ref = EOS.fugacity(T, P, a, b, amix[0], bmix[0], Volume[0], Composition[:, 0], kij[i, :], lij[i, :], i)
-                    FugCoef_aux = EOS.fugacity(T, P, a, b, amix[1], bmix[1], Volume[1], Composition[:, 1], kij[i, :], lij[i, :], i)
-                    dF[i * (comp + 2) + comp + 1] -= (FugCoef_aux - FugCoef_ref)
+                FugCoef_ref, FugCoef_aux = EOS.calculate_fugacity_coefs(comp, T, P, a, b, amix, bmix, Volume, Composition, kij, lij)
+                dF[i_arr * (comp + 2) + comp+1] -= (FugCoef_aux - FugCoef_ref)
 
-                dF[(np.arange(comp) * (comp + 2)) + comp + 1] /= 2.0 * diffP
+                dF[(i_arr * (comp + 2)) + comp + 1] /= 2.0 * diffP
 
                 # OBS: The derivative ok ln(K) with respect to ln(P) is null.
                 # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
