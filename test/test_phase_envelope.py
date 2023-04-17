@@ -2,14 +2,12 @@ import unittest
 
 import numpy
 
-from src.eos import EOS
-
 from src.phase_envelope import PhaseEnvelope
 from src.successive_substitution import SuccessiveSubstitution
 
 
 class TestPhaseEnvelope(unittest.TestCase):
-    def test_phase_envelope(self):
+    def test_phase_envelope_simple(self):
         self.maxDiff=None
         expected_res = [
             {'pressure': 0.5, 'temperature': 451.31807134411906, 'composition': [0.9, 0.0030316630751809886, 0.1, 0.99696833692482]}, {'pressure': 0.5525854590378239, 'temperature': 454.0221093121738, 'composition': [0.9, 0.003319307908447115, 0.1, 0.9966806920915531]},
@@ -115,20 +113,64 @@ class TestPhaseEnvelope(unittest.TestCase):
             {'pressure': 0.6349473943838938, 'temperature': 176.3418912349383, 'composition': [0.9, 0.9999999999999997, 0.1, 3.2206082177856057e-16]}, {'pressure': 0.5498255975043113, 'temperature': 174.1447433035498, 'composition': [0.9, 0.9999999999999999, 0.1, 1.807436197619397e-16]}
         ]
 
-        z = numpy.array([0.9, 0.1])
-        Tc = numpy.array([304.21, 723.00])
-        Pc = numpy.array([73.83, 14.00])
-        acentric = numpy.array([0.2236, 0.7174])
-        comp = 2
+        mole_fractions = numpy.array([0.9, 0.1])
+        critical_temperatures = numpy.array([304.21, 723.00])
+        critical_pressures = numpy.array([73.83, 14.00])
+        acentric_factors = numpy.array([0.2236, 0.7174])
 
         pe = PhaseEnvelope(logging_level="DEBUG")
-        T = 80.0  # Initial Temperature Guess (K)
-        P = 0.5  # Initial Pressure (bar)
+        temperature = 80.0  # K
+        pressure = 0.5  # bar
 
-        res = pe.calculate(T, P, z, Tc, Pc, acentric)
+        res = pe.calculate(temperature, pressure, mole_fractions, critical_temperatures, critical_pressures, acentric_factors)
         self.rounder(expected_res)
         self.rounder(res)
         self.assertListEqual(expected_res, res)
+
+    def test_phase_envelope_complex(self):
+        self.maxDiff = None
+
+        # molfrac critical_temperatures critical_pressures acentric_factors
+        input_data_string = """
+        0.00047, 126.094, 34.0, 0.045
+        0.0242, 304.039, 73.834, 0.231
+        0.6822, 190.372, 46.055, 0.0115
+        0.118, 305.261, 48.814, 0.0908
+        0.0546, 369.65, 42.503, 0.1454
+        0.0083, 407.983, 36.49, 0.1756
+        0.0174, 424.983, 37.979, 0.1928
+        0.0072, 460.261, 33.821, 0.2273
+        0.0074, 469.483, 33.697, 0.251
+        0.0107, 507.261, 30.131, 0.2957
+        0.0653, 634.331, 25.707, 0.4699
+        """
+        input_data = input_data_string.strip("\n").strip().split("\n")
+        z = []
+        critical_temperatures = []
+        critical_pressures = []
+        acentric_factors = []
+        for row in input_data:
+            row_data = row.split(", ")
+            z.append(float(row_data[0]))
+            critical_temperatures.append(float(row_data[1]))
+            critical_pressures.append(float(row_data[2]))
+            acentric_factors.append(float(row_data[3]))
+
+        pe = PhaseEnvelope(logging_level="DEBUG")
+        temperature = 80.0
+        pressure = 0.5  
+
+        res = pe.calculate(temperature, pressure, z, critical_temperatures, critical_pressures, acentric_factors)
+        self.rounder(res)
+
+        self.assertEqual(1.772, res[10]["pressure"])
+        self.assertEqual(379.657, res[10]["temperature"])
+
+        self.assertEqual(247.189, res[84]["pressure"])
+        self.assertEqual(322.155, res[84]["temperature"])
+
+        self.assertEqual(190.539, res[101]["pressure"])
+        self.assertEqual(268.092, res[101]["temperature"])
 
     @staticmethod
     def rounder(results_list: list):
@@ -141,65 +183,21 @@ class TestPhaseEnvelope(unittest.TestCase):
 
                 item_dict[key] = round(item, 3)
 
-    def test_get_initial_temperature_guess(self):
-        T = 80.0
-        P = 0.5
-        Tc = numpy.array([304.21, 723.0])
-        ac = numpy.array([3.96211105e+06, 1.18021492e+08])
-        comp = 2
-        z = numpy.array([0.9, 0.1])
-        phase = numpy.array([0, 1])
-        b = numpy.array([26.65350799, 334.05964905])
-        amix = numpy.array([0.0, 0.0])
-        bmix = numpy.array([0.0, 0.0])
-        acentric = numpy.array([0.2236, 0.7174])
-        kij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
-        lij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
-        T = SuccessiveSubstitution.get_initial_temperature_guess(T, P, comp, z, phase, b, amix, bmix, acentric, Tc, ac, kij, lij)
+    class TestSuccessiveSubstitution(unittest.TestCase):
+        def test_get_initial_temperature_guess(self):
+            T = 80.0
+            P = 0.5
+            Tc = numpy.array([304.21, 723.0])
+            ac = numpy.array([3.96211105e+06, 1.18021492e+08])
+            comp = 2
+            z = numpy.array([0.9, 0.1])
+            phase = numpy.array([0, 1])
+            b = numpy.array([26.65350799, 334.05964905])
+            amix = numpy.array([0.0, 0.0])
+            bmix = numpy.array([0.0, 0.0])
+            acentric_factors = numpy.array([0.2236, 0.7174])
+            kij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
+            lij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
+            T = SuccessiveSubstitution.get_initial_temperature_guess(T, P, comp, z, phase, b, amix, bmix, acentric_factors, Tc, ac, kij, lij)
 
-        self.assertEqual(230.0, T)
-
-
-    # TODO Delete after testing
-    def test_eos_parameters(self):
-        accentric_factor = numpy.array([0.2236, 0.7174])
-        critical_temperatures = numpy.array([304.21, 723.00])
-        ac = numpy.array([3.96211105e+06, 1.18021492e+08])
-        temperature = 557.5
-
-        a = EOS.eos_parameters(accentric_factor, critical_temperatures, ac, temperature)
-        expected_a = numpy.array([2.23023699e+06, 1.59791896e+08])
-
-        self.assertTrue(numpy.allclose(expected_a, a))
-
-    def test_VdW1fMIX(self):
-        a = numpy.array([2.23012210e+06, 1.59785351e+08])
-        b = numpy.array([26.65350799, 334.05964905])
-        kij = numpy.array([[0., 0.], [0., 0.]])
-        lij = numpy.array([[0., 0.], [0., 0.]])
-        Composition = numpy.array([[0.9, 0.06261139], [0.1, 0.93754181]])
-
-        amix = numpy.array([0., 0.])
-        bmix = numpy.array([0., 0.])
-
-        amix[0], bmix[0] = EOS.VdW1fMIX(2, a, b, kij, lij, Composition[:, 0])
-        amix[1], bmix[1] = EOS.VdW1fMIX(2, a, b, kij, lij, Composition[:, 1])
-
-        expected_amix = numpy.array([6.80211104e+06, 1.42630096e+08])
-        expected_bmix = numpy.array([57.39412209, 314.81547131])
-
-        self.assertTrue(numpy.allclose(amix, expected_amix))
-        self.assertTrue(numpy.allclose(bmix, expected_bmix))
-
-    def test_Eos_Volume(self):
-        P = 12.23
-        T = 557.5
-
-        amix = numpy.array([6.80211104e+06, 1.42630096e+08])
-        bmix = numpy.array([57.39412209, 314.81547131])
-        expected_volume = numpy.array([3704.09392444, 424.95313387])
-        volume = numpy.array([0., 0.])
-        for i in range(2):
-            volume[i] = EOS.EoS_Volume(P, T, bmix[i], amix[i], i)
-
-        self.assertTrue(numpy.allclose(expected_volume, volume))
+            self.assertEqual(230.0, T)

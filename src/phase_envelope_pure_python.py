@@ -6,7 +6,7 @@
 # class PhaseEnvelope:
 #
 #     #@numba.jit(nopython=True)
-#     def calculate(self, comp, z, Tc, Pc, acentric):
+#     def calculate(self, comp, z, Tc, Pc, acentric_factors):
 #         R = 83.14462175  # cm³.bar/(mol.K)
 #         Volume = numpy.zeros(2)
 #         amix = numpy.zeros(2)
@@ -37,8 +37,8 @@
 #         # Reading And Calculating Properties********************************************************************************************
 #         aux = 0.0
 #         for i in range(comp):
-#             # Reading Global Composition, Critical Temperature, Critical Pressure and Acentric Factor
-#             # read(input_num,*) z[i], Tc[i], Pc[i], acentric[i]
+#             # Reading Global Composition, Critical Temperature, Critical Pressure and acentric_factors Factor
+#             # read(input_num,*) z[i], Tc[i], Pc[i], acentric_factors[i]
 #
 #             # EoS Parameters Calculation
 #             b[i] = 0.07780 * R * Tc[i] / Pc[i]  # covolume
@@ -53,8 +53,8 @@
 #         P = 0.5  # Initial Pressure (bar)
 #
 #         for i in range(comp):
-#             # K[i] = 1.0/numpy.exp(numpy.log(Pc[i]/P) + 5.373*(1.0 + acentric[i])*(1.0 - Tc[i]/T)) #Whitson's Approach for Vapor-Liquid Equilibria
-#             K[i] = numpy.exp(5.373 * (1.0 + acentric[i]) * (1.0 - Tc[i] / T)) * (Pc[i] / P)  # Whitson's Approach for Vapor-Liquid Equilibria
+#             # K[i] = 1.0/numpy.exp(numpy.log(Pc[i]/P) + 5.373*(1.0 + acentric_factors[i])*(1.0 - Tc[i]/T)) #Whitson's Approach for Vapor-Liquid Equilibria
+#             K[i] = numpy.exp(5.373 * (1.0 + acentric_factors[i]) * (1.0 - Tc[i] / T)) * (Pc[i] / P)  # Whitson's Approach for Vapor-Liquid Equilibria
 #             z[i] = z[i] / aux  # Normalizing Global Composition
 #             Composition[i, 0] = z[i]  # Reference Phase Composition
 #         # enddo
@@ -68,7 +68,7 @@
 #         while (T_old != T):
 #             T_old = T
 #
-#             a = EOS.eos_parameters(acentric, Tc, ac, T)  # Updating Attractive Parameter
+#             a = EOS.eos_parameters(acentric_factors, Tc, ac, T)  # Updating Attractive Parameter
 #             amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, z)  # Mixing Rule
 #             Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], 0)
 #             Volume[1] = EOS.EoS_Volume(P, T, bmix[0], amix[0], 1)
@@ -118,7 +118,7 @@
 #
 #             # Numerical Derivative With Respect to Temperature
 #             T = T_old + diff
-#             a = EOS.eos_parameters(acentric, Tc, ac, T)  # Updating Attractive Parameter
+#             a = EOS.eos_parameters(acentric_factors, Tc, ac, T)  # Updating Attractive Parameter
 #             amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #             amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #             Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], 0)
@@ -130,7 +130,7 @@
 #             # enddo
 #
 #             T = T_old - diff
-#             a = EOS.eos_parameters(acentric, Tc, ac, T)   # Updating Attractive Parameter
+#             a = EOS.eos_parameters(acentric_factors, Tc, ac, T)   # Updating Attractive Parameter
 #             amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #             amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #             Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], 0)
@@ -154,7 +154,7 @@
 #             T = T_old - step[0]
 #
 #             # Updating K-factors
-#             a = EOS.eos_parameters(acentric, Tc, ac, T)
+#             a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
 #             amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #             amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #             Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], 0)
@@ -206,7 +206,7 @@
 #                 it = it + 1
 #
 #                 # Calculating Residuals/////////////////////////////////////////////////////////////////////////////////////////////////
-#                 a = EOS.eos_parameters(acentric, Tc, ac, T)
+#                 a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
 #                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #                 Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], phase[0])
@@ -264,7 +264,7 @@
 #
 #                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
 #                 T = numpy.exp(Var[comp + 0] + diffT)
-#                 a = EOS.eos_parameters(acentric, Tc, ac, T)
+#                 a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
 #                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #                 Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], phase[0])
@@ -276,7 +276,7 @@
 #                 # enddo
 #
 #                 T = numpy.exp(Var[comp + 0] - diffT)
-#                 a = EOS.eos_parameters(acentric, Tc, ac, T)
+#                 a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
 #                 amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 0])  # Mixing Rule - Reference Phase
 #                 amix[1], bmix[1] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, 1])  # Mixing Rule - Incipient Phase
 #                 Volume[0] = EOS.EoS_Volume(P, T, bmix[0], amix[0], phase[0])
@@ -292,7 +292,7 @@
 #                 # enddo
 #
 #                 T = numpy.exp(Var[comp + 0])
-#                 a = EOS.eos_parameters(acentric, Tc, ac, T)
+#                 a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
 #                 # OBS: The derivative ok ln(K) with respect to ln(T) is null.
 #                 # **********************************************************************************************************************
 #
