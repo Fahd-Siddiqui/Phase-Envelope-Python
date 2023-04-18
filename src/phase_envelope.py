@@ -3,12 +3,11 @@ import time
 
 import numpy as np
 
-from src.Constants import Constants
+from src.constants import Constants, PR
+from src.calculator import Calculator
 from src.continuation import Continuation
-from src.eos import EOS
 from src.successive_substitution import SuccessiveSubstitution
 from src.utils import Utils
-from src.calculator import Calculator
 
 
 class PhaseEnvelope:
@@ -31,25 +30,25 @@ class PhaseEnvelope:
         self.CRITICAL_K_FACTOR = 0.04  # k_factors-factor Reference Value Used To Detect Critical Points
         self.FLAG_CRITICAL = 0  # if calculating the critical point, flag_crit = 1
         self.FLAG_ERROR = 0
-        self.MAX_STEPS = 1.0e6
+        self.MAXIMUM_STEPS = 1.0e6
         self.TOLERANCE = 1.0e-8
         self.DIFF = 1.0e-8
 
-    def calculate(self, temperature, pressure, mole_fraction_vapor, critical_temperatures, critical_pressures, acentric_factors):
-        mole_fraction_vapor = np.array(mole_fraction_vapor)
+    def calculate(self, temperature, pressure, vapor_mole_fractions, critical_temperatures, critical_pressures, acentric_factors):
+        vapor_mole_fractions = np.array(vapor_mole_fractions)
         critical_temperatures = np.array(critical_temperatures)
         critical_pressures = np.array(critical_pressures)
         acentric_factors = np.array(acentric_factors)
 
         start_time = time.perf_counter()
-        res = self._calculate(temperature, pressure, mole_fraction_vapor, critical_temperatures, critical_pressures, acentric_factors)
+        res = self._calculate(temperature, pressure, vapor_mole_fractions, critical_temperatures, critical_pressures, acentric_factors)
         process_time = round(time.perf_counter() - start_time, 2)
 
         self.logger.info(f"Time taken {process_time} s")
 
         return res
 
-    def _calculate(self, temperature, pressure, vapor_mole_fractions, critical_temperature, pressure_critical, acentric_factors):
+    def _calculate(self, temperature, pressure, vapor_mole_fractions, critical_temperatures, critical_pressures, acentric_factors):
         number_of_components = len(vapor_mole_fractions)
         amix = np.zeros(2)
         bmix = np.zeros(2)
@@ -70,10 +69,10 @@ class PhaseEnvelope:
         vapor_fraction_differential = np.zeros((number_of_components + 2) ** 2)
 
         # EoS Parameters Calculation
-        b = 0.07780 * Constants.R * critical_temperature / pressure_critical
-        ac = 0.45724 * Constants.R ** 2 * critical_temperature * critical_temperature / pressure_critical
+        b = PR.b_constant * Constants.R * critical_temperatures / critical_pressures
+        ac = PR.a_constant * (Constants.R * critical_temperatures) ** 2 / critical_pressures
 
-        k_factors = np.exp(5.373 * (1.0 + acentric_factors) * (1.0 - critical_temperature / temperature)) * (pressure_critical / pressure)
+        k_factors = np.exp(5.373 * (1.0 + acentric_factors) * (1.0 - critical_temperatures / temperature)) * (critical_pressures / pressure)
         vapor_mole_fractions = Utils.normalize(vapor_mole_fractions)
         mole_fractions[:, 0] = vapor_mole_fractions
 
@@ -81,7 +80,10 @@ class PhaseEnvelope:
         # phases[0] = 0 #Reference Phase Index (Vapor)
         # phases[1] = 1 #Incipient Phase Index (Liquid)
 
-        step[0] = self.MAX_STEPS
+        step[0] = self.MAXIMUM_STEPS
+
+        temperature = Calculator.get_initial_temperature_guess(temperature, pressure, mole_fractions[:, 0], phases, b, amix, bmix, acentric_factors, critical_temperatures, ac, kij, lij)
+
         ss = SuccessiveSubstitution(
             max_iterations=self.MAX_ITERATIONS,
             tolerance=self.TOLERANCE,
@@ -92,10 +94,8 @@ class PhaseEnvelope:
             step,
             temperature,
             acentric_factors,
-            critical_temperature,
+            critical_temperatures,
             ac,
-            number_of_components,
-            vapor_mole_fractions,
             b,
             kij,
             lij,
@@ -113,8 +113,8 @@ class PhaseEnvelope:
         specified_variable_differential = 0.1  # Specified Variable Variation
         variation = np.log(np.hstack((k_factors, temperature, pressure)))
 
-        specified_variabel_index = number_of_components + 1  # Specified Variable Index
-        variation[specified_variabel_index] = specified_variable  # Specified Independent Variable
+        specified_variable_index = number_of_components + 1  # Specified Variable Index
+        variation[specified_variable_index] = specified_variable  # Specified Independent Variable
         variation_differential = np.zeros_like(variation)
         variation_differential[number_of_components + 1] = 1.0
 
@@ -123,7 +123,7 @@ class PhaseEnvelope:
             self.TOLERANCE,
             self.MAX_ITERATIONS,
             self.MAXIMUM_TEMPERATURE_STEP,
-            self.MAX_STEPS,
+            self.MAXIMUM_STEPS,
             self.DIFF,
             self.CRITICAL_K_FACTOR,
             self.FLAG_ERROR,
@@ -136,7 +136,7 @@ class PhaseEnvelope:
             number_of_components,
 
             acentric_factors,
-            critical_temperature,
+            critical_temperatures,
             ac,
             amix,
             bmix,
@@ -146,7 +146,7 @@ class PhaseEnvelope:
             lij,
 
             mole_fractions,
-            specified_variabel_index,
+            specified_variable_index,
             specified_variable,
             specified_variable_differential,
             vapor_fraction,

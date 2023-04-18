@@ -12,7 +12,7 @@ class Continuation:
             tolerance,
             maximum_iterations,
             maximum_temperature_step,
-            maximum_step,
+            maximum_steps,
             diff,
             critical_k_factor,
             flag_error,
@@ -23,7 +23,7 @@ class Continuation:
         self.tolerance = tolerance
         self.maximum_iterations = maximum_iterations
         self.maximum_temperature_step = maximum_temperature_step
-        self.maximum_steps = maximum_step
+        self.maximum_steps = maximum_steps
         self.flag_error = flag_error
         self.flag_crit = flag_crit
         self.critical_k_factor = critical_k_factor
@@ -42,8 +42,8 @@ class Continuation:
                 # Numerically Differentiating the Fugacity Coefficient of the Incipient Phase
                 for sign in [1, -1]:
                     mole_fractions[j, 1] = aux + sign * diffFrac
-                    amix[1], bmix[1] = EOS.VdW1fMIX(number_of_components, a, b, kij, lij, mole_fractions[:, 1])
-                    volume[1] = EOS.EoS_Volume(pressure, T, bmix[1], amix[1], phase[1])
+                    amix[1], bmix[1] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, 1])
+                    volume[1] = EOS.calculate_eos_volume(pressure, T, bmix[1], amix[1], phase[1])
                     FugCoef_aux = EOS.fugacity(T, pressure, a, b, amix[1], bmix[1], volume[1], mole_fractions[:, 1], kij[i, :], lij[i, :], i)
 
                     dF[i * (number_of_components + 2) + j] = FugCoef_aux if sign == 1 else dF[i * (number_of_components + 2) + j] - FugCoef_aux
@@ -55,7 +55,7 @@ class Continuation:
                 if i == j:
                     dF[i * (number_of_components + 2) + j] += 1.0
 
-                mole_fractions[j, 1] = aux  # reset Composition[j, 1] to its original value
+                mole_fractions[j, 1] = aux  # reset mole_fractions[j, 1] to its original value
 
     def calculate(
             self,
@@ -90,14 +90,14 @@ class Continuation:
         while 0.5 <= pressure < 1000.0 and self.flag_error == 0:  # Main Loop
             point = point + 1
             iteration = 0
-            maxstep = self.maximum_steps
-            while maxstep > self.tolerance and iteration < self.maximum_iterations:  # Newton's Method Loop
+            maximum_steps = self.maximum_steps
+            while maximum_steps > self.tolerance and iteration < self.maximum_iterations:  # Newton's Method Loop
                 iteration += 1
 
                 # Calculating Residuals
                 a = EOS.eos_parameters(acentric_factors, critical_temperature, ac, temperature)
-                volume = EOS.calculate_mixing_rules(amix, bmix, number_of_components, a, b, kij, lij, mole_fractions, pressure, temperature, phases)
-                fugacity_difference = Calculator.calculate_fugacity_coef_difference(number_of_components, temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
+                volume = EOS.calculate_mixing_rules(amix, bmix, a, b, kij, lij, mole_fractions, pressure, temperature, phases)
+                fugacity_difference = Calculator.calculate_fugacity_coefficients_difference(temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
                 vapor_fraction[0:number_of_components] = variation[0:number_of_components] + fugacity_difference
                 vapor_fraction[number_of_components] = np.sum(mole_fractions[:, 1] - mole_fractions[:, 0])
                 vapor_fraction[number_of_components + 1] = variation[specified_variabel_index] - specified_variable
@@ -109,33 +109,33 @@ class Continuation:
                 vapor_fraction_differential[number_of_components * (number_of_components + 2):number_of_components * (number_of_components + 2) + number_of_components] = mole_fractions[:, 1]
 
                 # Differentiating The First "C" Residuals With Respect to ln[T]*********************************************************
-                diffT = self.diff * variation[number_of_components]
+                temperature_differential = self.diff * variation[number_of_components]
 
                 # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
                 i_arr = np.arange(number_of_components)
                 for sign in [1, -1]:
-                    temperature = np.exp(variation[number_of_components] + sign * diffT)
+                    temperature = np.exp(variation[number_of_components] + sign * temperature_differential)
                     a = EOS.eos_parameters(acentric_factors, critical_temperature, ac, temperature)
-                    fugacity_difference = Calculator.calculate_fugacity_coef_difference(number_of_components, temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
+                    fugacity_difference = Calculator.calculate_fugacity_coefficients_difference(temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
 
                     if sign == -1:
                         vapor_fraction_differential[i_arr * (number_of_components + 2) + number_of_components] -= fugacity_difference
                     else:
                         vapor_fraction_differential[i_arr * (number_of_components + 2) + number_of_components] = fugacity_difference
 
-                vapor_fraction_differential[(np.arange(number_of_components) * (number_of_components + 2) + number_of_components)] /= (2.0 * diffT)
+                vapor_fraction_differential[(np.arange(number_of_components) * (number_of_components + 2) + number_of_components)] /= (2.0 * temperature_differential)
                 temperature = np.exp(variation[number_of_components])
                 a = EOS.eos_parameters(acentric_factors, critical_temperature, ac, temperature)
 
                 # Differentiating The First "C" Residuals With Respect to ln[P]/////////////////////////////////////////////////////////
                 diffP = self.diff * variation[number_of_components + 1]
                 for ph in phases:
-                    amix[ph], bmix[ph] = EOS.VdW1fMIX(number_of_components, a, b, kij, lij, mole_fractions[:, ph])
+                    amix[ph], bmix[ph] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, ph])
 
                 # # Numerically Differentiating The ln(FugacityCoefficient) With Respect to ln(T)
                 for sign in [1, -1]:
                     pressure = np.exp(variation[number_of_components + 1] + sign * diffP)
-                    fugacity_difference = Calculator.calculate_fugacity_coef_difference(number_of_components, temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
+                    fugacity_difference = Calculator.calculate_fugacity_coefficients_difference(temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
 
                     if sign == -1:
                         vapor_fraction_differential[i_arr * (number_of_components + 2) + number_of_components + 1] -= fugacity_difference
@@ -163,7 +163,7 @@ class Continuation:
 
                 # Updating The Independent Variables************************************************************************************
                 variation = variation - step
-                maxstep = max(abs(step / variation))
+                maximum_steps = max(abs(step / variation))
                 # **********************************************************************************************************************
 
                 # Calculating The Natural Form Of Indep# endent Variables And Updating Compositions Of The Incipient Phase////////////////
@@ -176,7 +176,7 @@ class Continuation:
 
             # self.logger.info("Incipient Phase = ", phases[1] + 1, "    P = ", P, "T = ", T, "specified_variabel_index =", specified_variabel_index)
 
-            if maxstep > self.tolerance or any(np.isnan(variation)):
+            if maximum_steps > self.tolerance or any(np.isnan(variation)):
                 flag_error = 1
                 # raise Exception("Something went wrong. Unable t oconverge")
 
@@ -190,7 +190,7 @@ class Continuation:
                     # "phases": current_phase,
                     "pressure": pressure,
                     "temperature": temperature,
-                    "composition": list(mole_fractions.flatten()),
+                    "mole_fractions": list(mole_fractions.flatten()),
                 }
 
                 self.logger.debug(f"{results}")

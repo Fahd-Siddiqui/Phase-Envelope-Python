@@ -22,13 +22,13 @@ class MyTestCase(unittest.TestCase):
         b = numpy.array([26.65350799, 334.05964905])
         kij = numpy.array([[0., 0.], [0., 0.]])
         lij = numpy.array([[0., 0.], [0., 0.]])
-        Composition = numpy.array([[0.9, 0.06261139], [0.1, 0.93754181]])
+        mole_fractions = numpy.array([[0.9, 0.06261139], [0.1, 0.93754181]])
 
         amix = numpy.array([0., 0.])
         bmix = numpy.array([0., 0.])
 
-        amix[0], bmix[0] = EOS.VdW1fMIX(2, a, b, kij, lij, Composition[:, 0])
-        amix[1], bmix[1] = EOS.VdW1fMIX(2, a, b, kij, lij, Composition[:, 1])
+        amix[0], bmix[0] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, 0])
+        amix[1], bmix[1] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, 1])
 
         expected_amix = numpy.array([6.80211104e+06, 1.42630096e+08])
         expected_bmix = numpy.array([57.39412209, 314.81547131])
@@ -45,6 +45,6 @@ class MyTestCase(unittest.TestCase):
         expected_volume = numpy.array([3704.09392444, 424.95313387])
         volume = numpy.array([0., 0.])
         for i in range(2):
-            volume[i] = EOS.EoS_Volume(P, T, bmix[i], amix[i], i)
+            volume[i] = EOS.calculate_eos_volume(P, T, bmix[i], amix[i], i)
 
         self.assertTrue(numpy.allclose(expected_volume, volume))

@@ -10,84 +10,78 @@ class SuccessiveSubstitution:
         self.tol = tolerance
         self.diff = diff
 
-    def calculate(self, step, temperature, acentric_factors, Tc, ac, comp, z, b, kij, lij, composition, pressure, amix, bmix, phase, k_factors, vapor_fraction, temperature_diff):
+    def calculate(
+            self, 
+            step, 
+            temperature,
+            acentric_factors,
+            critical_temperatures,
+            ac,
+            b,
+            kij,
+            lij,
+            mole_fractions,
+            pressure,
+            amix,
+            bmix,
+            phases,
+            k_factors,
+            vapor_fraction,
+            vapor_fraction_differential
+    ):
         it = 0
-        temperature = self.get_initial_temperature_guess(temperature, pressure, comp, z, phase, b, amix, bmix, acentric_factors, Tc, ac, kij, lij)
 
         while np.abs(step[0]) > self.tol and it < self.iterations_max:
             it = it + 1
-            temperatre_old = temperature
+            temperature_old = temperature
 
-            composition[:, 1] = composition[:, 0] * k_factors
-            vapor_fraction[0] = sum(composition[:, 1]) - 1.0
-            temperature_diff[0] = 0.0
+            mole_fractions[:, 1] = mole_fractions[:, 0] * k_factors
+            vapor_fraction[0] = sum(mole_fractions[:, 1]) - 1.0
+            vapor_fraction_differential[0] = 0.0
 
             # Numerical Derivative With Respect to Temperature
-            a = EOS.eos_parameters(acentric_factors, Tc, ac, temperature)
-            temperature_diff = self.calculate_temperature_diff(temperatre_old, self.diff, acentric_factors, Tc, ac, comp, a, b, kij, lij, composition, pressure, amix, bmix, phase, k_factors, temperature_diff)
+            a = EOS.eos_parameters(acentric_factors, critical_temperatures, ac, temperature)
+            vapor_fraction_differential = self.calculate_temperature_diff(temperature_old, self.diff, acentric_factors, critical_temperatures, ac, a, b, kij, lij, mole_fractions, pressure, amix, bmix, phases, k_factors, vapor_fraction_differential)
 
-            temperature_diff[0] = temperature_diff[0] / (2.0 * self.diff)
+            vapor_fraction_differential[0] = vapor_fraction_differential[0] / (2.0 * self.diff)
 
             # Temperature Step Calculation
-            step[0] = vapor_fraction[0] / temperature_diff[0]
+            step[0] = vapor_fraction[0] / vapor_fraction_differential[0]
 
             # Step Brake
-            if np.abs(step[0]) > 0.25 * temperatre_old:
-                step[0] = 0.25 * temperatre_old * step[0] / np.abs(step[0])
+            if np.abs(step[0]) > 0.25 * temperature_old:
+                step[0] = 0.25 * temperature_old * step[0] / np.abs(step[0])
 
             # Updating Temperature
-            temperature = temperatre_old - step[0]
+            temperature = temperature_old - step[0]
 
             # Updating K-factors
-            a = EOS.eos_parameters(acentric_factors, Tc, ac, temperature)
-            k_factors = self.update_k_factors(temperature, pressure, comp, a, b, kij, lij, composition, amix, bmix, phase)
+            a = EOS.eos_parameters(acentric_factors, critical_temperatures, ac, temperature)
+            k_factors = self.update_k_factors(temperature, pressure, a, b, kij, lij, mole_fractions, amix, bmix, phases)
 
         if it == self.iterations_max and np.abs(step[0]) > self.tol:
             raise Exception("In Successive Substitution Method - Maximum Number of Iterations Reached")
 
         return temperature, k_factors
 
-    @staticmethod
-    def get_initial_temperature_guess(temperature: float, P: float, comp, z, phase, b: np.ndarray, amix, bmix, acentric_factors, Tc, ac, kij: np.ndarray, lij: np.ndarray):
-        temperature_old = temperature - 1.0
-        while temperature_old != temperature:
-            temperature_old = temperature
-
-            a = EOS.eos_parameters(acentric_factors, Tc, ac, temperature)  # Updating Attractive Parameter
-            amix[0], bmix[0] = EOS.VdW1fMIX(comp, a, b, kij, lij, z)  # Mixing Rule
-            amix[1], bmix[1] = amix[0], bmix[0]
-
-            volume = EOS.Eos_Volumes(P, temperature, amix, bmix, phase)
-            fug_coef_ref = np.frompyfunc(lambda i: EOS.fugacity(temperature, P, a, b, amix[0], bmix[0], volume[0], z, kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-            fug_coef_aux = np.frompyfunc(lambda i: EOS.fugacity(temperature, P, a, b, amix[0], bmix[0], volume[1], z, kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-
-            gibbs_vap = np.sum(z * fug_coef_ref)
-            gibbs_liq = np.sum(z * fug_coef_aux)
-
-            # factor 1.75 was proposed by Pedersen and Christensen (Phase Behavior Of Petroleum Reservoir Fluids, 2007 - Chapter 6.5 Phase Identification)
-            if (gibbs_liq < gibbs_vap) or (gibbs_liq == gibbs_vap and (volume[0] / bmix[0]) < 1.75):
-                temperature = temperature + 10.0
-
-        return temperature
-
     @classmethod
-    def calculate_temperature_diff(cls, T_old, diff, acentric_factors, Tc, ac, comp, a, b, kij, lij, Composition, P, amix, bmix, phase, K, dF):
+    def calculate_temperature_diff(cls, temperature_previous, diff, acentric_factors, critical_temperatures, ac, a, b, kij, lij, mole_fractions, pressure, amix, bmix, phase, k_factors, temperature_diff):
         for ph in phase:
-            amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
+            amix[ph], bmix[ph] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, ph])
 
         for sign in [-1, 1]:
-            T = T_old + sign * diff
-            a = EOS.eos_parameters(acentric_factors, Tc, ac, T)
-            fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
-            dF[0] += sign * np.sum(Composition[:, 0] * K * (-fugacity_coef_difference))
+            temperature = temperature_previous + sign * diff
+            a = EOS.eos_parameters(acentric_factors, critical_temperatures, ac, temperature)
+            fugacity_coef_difference = Calculator.calculate_fugacity_coefficients_difference(temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phase)
+            temperature_diff[0] += sign * np.sum(mole_fractions[:, 0] * k_factors * (-fugacity_coef_difference))
 
-        return dF
+        return temperature_diff
 
     @classmethod
-    def update_k_factors(cls, T, P, comp, a, b, kij, lij, Composition, amix, bmix, phase):
-        for ph in phase:
-            amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
+    def update_k_factors(cls, temperature, pressure, a, b, kij, lij, mole_fractions, amix, bmix, phases):
+        for ph in phases:
+            amix[ph], bmix[ph] = EOS.van_der_waals_mixing_rule(a, b, kij, lij, mole_fractions[:, ph])
 
-        fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
-        K = np.exp(-fugacity_coef_difference)
+        fugacity_coefficients_difference = Calculator.calculate_fugacity_coefficients_difference(temperature, pressure, a, b, amix, bmix, mole_fractions, kij, lij, phases)
+        K = np.exp(-fugacity_coefficients_difference)
         return K
