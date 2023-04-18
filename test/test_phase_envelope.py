@@ -190,7 +190,7 @@ class TestPhaseEnvelope(unittest.TestCase):
             critical_temperatures = [304.21, 723.0]
             ac = [3.96211105e+06, 1.18021492e+08]
             comp = 2
-            vapor_mole_fractions = numpy.array([0.9, 0.1])
+            mole_fractions_vapor = numpy.array([0.9, 0.1])
             phase = numpy.array([0, 1])
             b = numpy.array([26.65350799, 334.05964905])
             amix = numpy.array([0.0, 0.0])
@@ -198,6 +198,6 @@ class TestPhaseEnvelope(unittest.TestCase):
             acentric_factors = numpy.array([0.2236, 0.7174])
             kij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
             lij = numpy.array([numpy.array([0.0, 0.0]), numpy.array([0.0, 0.0])])
-            guess_temperature = SuccessiveSubstitution.get_initial_temperature_guess(guess_temperature, guess_pressure, comp, vapor_mole_fractions, phase, b, amix, bmix, acentric_factors, critical_temperatures, ac, kij, lij)
+            guess_temperature = SuccessiveSubstitution.get_initial_temperature_guess(guess_temperature, guess_pressure, comp, mole_fractions_vapor, phase, b, amix, bmix, acentric_factors, critical_temperatures, ac, kij, lij)
 
             self.assertEqual(230.0, guess_temperature)
