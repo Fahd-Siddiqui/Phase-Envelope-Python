@@ -3,8 +3,8 @@ name: CI
 on: push
 
 jobs:
-  static:
-    name: Static Analysis
+  lint-and-test:
+    name: Lint and test
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v3
@@ -28,6 +28,9 @@ jobs:
 
       - name: Project requirements
         run: make requirements
+
+      - name: Lint
+        run: make lint
 
       - name: Run unit tests
         run: make test
