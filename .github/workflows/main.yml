@@ -12,10 +12,11 @@ jobs:
         with:
           python-version: 3.9
 
-      - name: flake8
-        run: |
-          pip install flake8
-          flake8
+      - name: Test requirements
+        run: make requirements-test
+
+      - name: Lint
+        run: make lint
           
 
   testing:
@@ -38,15 +39,11 @@ jobs:
             ${{ runner.os }}-pip-${{ hashFiles('requirements*.txt') }}
             ${{ runner.os }}-pip-
 
-      - name: Install dependencies
-        run: |
-          pip install -r requirements.txt
+      - name: Project requirements
+        run: make requirements
 
       - name: Run unit tests
-        run: |
-          pip install coverage
-          coverage run --source=src -m unittest -v
+        run: make test
 
       - name: Coverage report
-        run: |
-          coverage report
+        run: coverage report

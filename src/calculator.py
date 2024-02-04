@@ -9,9 +9,6 @@ class Calculator:
         volume = EOS.calculate_mixing_rules(amix, bmix, comp, a, b, kij, lij, Composition, P, T, phase)
         fugacity_vec = EOS.fugacity_vec(T, P, a, b, amix, bmix, volume, Composition, kij, lij)
 
-        fugacity_coefficients = [
-            fugacity_vec(np.arange(comp), ph).astype('float64')
-            for ph in phase
-        ]
+        fugacity_coefficients = [fugacity_vec(np.arange(comp), ph).astype("float64") for ph in phase]
 
         return fugacity_coefficients[phase[1]] - fugacity_coefficients[phase[0]]

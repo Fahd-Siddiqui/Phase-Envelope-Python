@@ -10,11 +10,45 @@ class SuccessiveSubstitution:
         self.tol = tol
         self.diff = diff
 
-    def run(self, step, temperature, acentric, Tc, ac, comp, z, b, kij, lij, composition, pressure, amix, bmix, phase, k_factors, F, temperature_diff):
+    def run(
+        self,
+        step: float,
+        temperature,
+        acentric_factors,
+        critical_temperatures,
+        ac,
+        comp,
+        z,
+        b,
+        kij,
+        lij,
+        composition,
+        pressure,
+        amix,
+        bmix,
+        phase,
+        k_factors,
+        F,
+        temperature_diff,
+    ):
         it = 0
-        temperature = self.get_initial_temperature_guess(temperature, pressure, comp, z, phase, b, amix, bmix, acentric, Tc, ac, kij, lij)
+        temperature = self.get_initial_temperature_guess(
+            temperature,
+            pressure,
+            comp,
+            z,
+            phase,
+            b,
+            amix,
+            bmix,
+            acentric_factors,
+            critical_temperatures,
+            ac,
+            kij,
+            lij,
+        )
 
-        while np.abs(step[0]) > self.tol and it < self.iterations_max:
+        while abs(step) > self.tol and it < self.iterations_max:
             it = it + 1
             temperatre_old = temperature
 
@@ -23,32 +57,76 @@ class SuccessiveSubstitution:
             temperature_diff[0] = 0.0
 
             # Numerical Derivative With Respect to Temperature
-            a = EOS.eos_parameters(acentric, Tc, ac, temperature)
-            temperature_diff = self.calculate_temperature_diff(temperatre_old, self.diff, acentric, Tc, ac, comp, a, b, kij, lij, composition, pressure, amix, bmix, phase, k_factors, temperature_diff)
+            a = EOS.eos_parameters(acentric_factors, critical_temperatures, ac, temperature)
+            temperature_diff = self.calculate_temperature_diff(
+                temperatre_old,
+                self.diff,
+                acentric_factors,
+                critical_temperatures,
+                ac,
+                comp,
+                a,
+                b,
+                kij,
+                lij,
+                composition,
+                pressure,
+                amix,
+                bmix,
+                phase,
+                k_factors,
+                temperature_diff,
+            )
 
             temperature_diff[0] = temperature_diff[0] / (2.0 * self.diff)
 
             # Temperature Step Calculation
-            step[0] = F[0] / temperature_diff[0]
+            step = F[0] / temperature_diff[0]
 
             # Step Brake
-            if np.abs(step[0]) > 0.25 * temperatre_old:
-                step[0] = 0.25 * temperatre_old * step[0] / np.abs(step[0])
+            if np.abs(step) > 0.25 * temperatre_old:
+                step = 0.25 * temperatre_old * step / np.abs(step)
 
             # Updating Temperature
-            temperature = temperatre_old - step[0]
+            temperature = temperatre_old - step
 
             # Updating K-factors
-            a = EOS.eos_parameters(acentric, Tc, ac, temperature)
-            k_factors = self.update_k_factors(temperature, pressure, comp, a, b, kij, lij, composition, amix, bmix, phase)
+            a = EOS.eos_parameters(acentric_factors, critical_temperatures, ac, temperature)
+            k_factors = self.update_k_factors(
+                temperature,
+                pressure,
+                comp,
+                a,
+                b,
+                kij,
+                lij,
+                composition,
+                amix,
+                bmix,
+                phase,
+            )
 
-        if it == self.iterations_max and np.abs(step[0]) > self.tol:
+        if it == self.iterations_max and abs(step) > self.tol:
             raise Exception("In Successive Substitution Method - Maximum Number of Iterations Reached")
 
         return temperature, k_factors
 
     @staticmethod
-    def get_initial_temperature_guess(temperature: float, P: float, comp, z, phase, b: np.ndarray, amix, bmix, acentric, Tc, ac, kij: np.ndarray, lij: np.ndarray):
+    def get_initial_temperature_guess(
+        temperature: float,
+        P: float,
+        comp,
+        z,
+        phase,
+        b: np.ndarray,
+        amix,
+        bmix,
+        acentric,
+        Tc,
+        ac,
+        kij: np.ndarray,
+        lij: np.ndarray,
+    ):
         temperature_old = temperature - 1.0
         while temperature_old != temperature:
             temperature_old = temperature
@@ -58,8 +136,40 @@ class SuccessiveSubstitution:
             amix[1], bmix[1] = amix[0], bmix[0]
 
             volume = EOS.Eos_Volumes(P, temperature, amix, bmix, phase)
-            fug_coef_ref = np.frompyfunc(lambda i: EOS.fugacity(temperature, P, a, b, amix[0], bmix[0], volume[0], z, kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
-            fug_coef_aux = np.frompyfunc(lambda i: EOS.fugacity(temperature, P, a, b, amix[0], bmix[0], volume[1], z, kij[i, :], lij[i, :], i), 1, 1)(np.arange(comp))
+            fug_coef_ref = np.frompyfunc(
+                lambda i: EOS.fugacity(
+                    temperature,
+                    P,
+                    a,
+                    b,
+                    amix[0],
+                    bmix[0],
+                    volume[0],
+                    z,
+                    kij[i, :],
+                    lij[i, :],
+                    i,
+                ),
+                1,
+                1,
+            )(np.arange(comp))
+            fug_coef_aux = np.frompyfunc(
+                lambda i: EOS.fugacity(
+                    temperature,
+                    P,
+                    a,
+                    b,
+                    amix[0],
+                    bmix[0],
+                    volume[1],
+                    z,
+                    kij[i, :],
+                    lij[i, :],
+                    i,
+                ),
+                1,
+                1,
+            )(np.arange(comp))
 
             gibbs_vap = np.sum(z * fug_coef_ref)
             gibbs_liq = np.sum(z * fug_coef_aux)
@@ -71,14 +181,35 @@ class SuccessiveSubstitution:
         return temperature
 
     @classmethod
-    def calculate_temperature_diff(cls, T_old, diff, acentric, Tc, ac, comp, a, b, kij, lij, Composition, P, amix, bmix, phase, K, dF):
-        for ph in phase:
-            amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
+    def calculate_temperature_diff(
+        cls,
+        T_old,
+        diff,
+        acentric,
+        Tc,
+        ac,
+        comp,
+        a,
+        b,
+        kij,
+        lij,
+        Composition,
+        P,
+        amix,
+        bmix,
+        phases,
+        K,
+        dF,
+    ):
+        for phase in phases:
+            amix[phase], bmix[phase] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, phase])
 
         for sign in [-1, 1]:
             T = T_old + sign * diff
             a = EOS.eos_parameters(acentric, Tc, ac, T)
-            fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
+            fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(
+                comp, T, P, a, b, amix, bmix, Composition, kij, lij, phases
+            )
             dF[0] += sign * np.sum(Composition[:, 0] * K * (-fugacity_coef_difference))
 
         return dF
@@ -88,6 +219,8 @@ class SuccessiveSubstitution:
         for ph in phase:
             amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
 
-        fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase)
+        fugacity_coef_difference = Calculator.calculate_fugacity_coef_difference(
+            comp, T, P, a, b, amix, bmix, Composition, kij, lij, phase
+        )
         K = np.exp(-fugacity_coef_difference)
         return K

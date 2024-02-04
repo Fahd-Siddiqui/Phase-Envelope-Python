@@ -1,16 +1,30 @@
 # Phase Envelope Python
 
-
 ## How to use
-TODO
+```shell
+make install
+```
+
+Open and use `Phase Envelope - Example 1.ipynb`
+
 
 ## Contributing
-TODO
+PRs welcome!
 
 
 ## Roadmap
-1. Refactor and simplify the code
-2. Add jupyter notebooks for interfacing
-3. Add plots and improve input/output handling
-4. Add GH actions
-5. Add more test cases
+
+| Item                                  | Status   |
+|---------------------------------------|----------|
+| Refactor and simplify the code        | On-going |
+| Add more test cases                   | Pending  |
+| Add jupyter notebooks for interfacing | Done     |
+| Add GH actions                        | Done     |
+| Add MyPy                              | Done     |
+| Add black and isort                   | Done     |
+
+## Attribution
+
+Translated and improved upon from:
+
+https://github.com/RPCarmo/Phase-Envelope
