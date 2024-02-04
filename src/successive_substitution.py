@@ -174,7 +174,8 @@ class SuccessiveSubstitution:
             gibbs_vap = np.sum(z * fug_coef_ref)
             gibbs_liq = np.sum(z * fug_coef_aux)
 
-            # factor 1.75 was proposed by Pedersen and Christensen (Phase Behavior Of Petroleum Reservoir Fluids, 2007 - Chapter 6.5 Phase Identification)
+            # factor 1.75 was proposed by Pedersen and Christensen
+            # (Phase Behavior Of Petroleum Reservoir Fluids, 2007 - Chapter 6.5 Phase Identification)
             if (gibbs_liq < gibbs_vap) or (gibbs_liq == gibbs_vap and (volume[0] / bmix[0]) < 1.75):
                 temperature = temperature + 10.0
 

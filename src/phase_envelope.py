@@ -3,6 +3,7 @@ import time
 from typing import Dict, List
 
 import numpy as np
+import numpy.typing as npt
 
 from src.calculator import Calculator
 from src.Constants import Constants
@@ -34,10 +35,10 @@ class PhaseEnvelope:
         self,
         temperature: float,
         pressure: float,
-        phase_compositions: np.ndarray,
-        critical_temperatures: np.ndarray,
-        critical_pressures: np.ndarray,
-        acentric_factors: np.ndarray,
+        phase_compositions: npt.NDArray[np.float64],
+        critical_temperatures: npt.NDArray[np.float64],
+        critical_pressures: npt.NDArray[np.float64],
+        acentric_factors: npt.NDArray[np.float64],
     ):
         phase_compositions = np.array(phase_compositions)
         critical_temperatures = np.array(critical_temperatures)
@@ -63,20 +64,20 @@ class PhaseEnvelope:
         self,
         temperature: float,
         pressure: float,
-        phase_compositions: np.ndarray,
-        critical_temperatures: np.ndarray,
-        critical_pressures: np.ndarray,
-        acentric_factors: np.ndarray,
+        phase_compositions: npt.NDArray[np.float64],
+        critical_temperatures: npt.NDArray[np.float64],
+        critical_pressures: npt.NDArray[np.float64],
+        acentric_factors: npt.NDArray[np.float64],
     ):
         component_index = len(phase_compositions)
-        a_mix: np.ndarray = np.zeros(2)
-        b_mix: np.ndarray = np.zeros(2)
+        a_mix: npt.NDArray[np.float64] = np.zeros(2)
+        b_mix: npt.NDArray[np.float64] = np.zeros(2)
 
         phase_envelope_results = []
 
-        composition: np.ndarray = np.zeros((component_index, component_index))
-        kij: np.ndarray = np.zeros((component_index, component_index))
-        lij: np.ndarray = np.zeros((component_index, component_index))
+        composition: npt.NDArray[np.float64] = np.zeros((component_index, component_index))
+        kij: npt.NDArray[np.float64] = np.zeros((component_index, component_index))
+        lij: npt.NDArray[np.float64] = np.zeros((component_index, component_index))
 
         dF = np.zeros((component_index + 2) ** 2)
         sensitivity = np.zeros(component_index + 2)
@@ -186,7 +187,16 @@ class PhaseEnvelope:
                 max_step,
             )
 
-            # self.logger.info("Incipient Phase = ", phase[1] + 1, "    P = ", P, "T = ", T, "self.specified_variable =", self.specified_variable)
+            # self.logger.info(
+            #     "Incipient Phase = ",
+            #     phase[1] + 1,
+            #     "    P = ",
+            #     P,
+            #     "T = ",
+            #     T,
+            #     "self.specified_variable =",
+            #     self.specified_variable,
+            # )
 
             if max_step > self.TOLERANCE or any(np.isnan(Var)):
                 flag_error = 1
@@ -279,7 +289,7 @@ class PhaseEnvelope:
         return phase_envelope_results
 
     @staticmethod
-    def solve(matrix: np.ndarray, b: np.ndarray):
+    def solve(matrix: npt.NDArray[np.float64], b: npt.NDArray[np.float64]):
         return np.linalg.solve(matrix, b)
 
     def differentiate_first_c_residuals_lnK(
@@ -390,7 +400,7 @@ class PhaseEnvelope:
             F[comp] = np.sum(Composition[:, 1] - Composition[:, 0])
             F[comp + 1] = Var[self.specified_variable_index] - S
 
-            # Differentiating The First "C" Residuals With Respect to ln[K(j)]******************************************************
+            # Differentiating The First "C" Residuals With Respect to ln[K(j)]
             self.differentiate_first_c_residuals_lnK(
                 comp,
                 Composition,
@@ -407,10 +417,10 @@ class PhaseEnvelope:
                 dF,
             )
 
-            # Differentiating "C+1" Residual With Respect to ln[K[i]]///////////////////////////////////////////////////////////////
+            # Differentiating "C+1" Residual With Respect to ln[K[i]]
             dF[comp * (comp + 2) : comp * (comp + 2) + comp] = Composition[:, 1]
 
-            # Differentiating The First "C" Residuals With Respect to ln[T]*********************************************************
+            # Differentiating The First "C" Residuals With Respect to ln[T]
             diffT = self.diff * Var[comp]
 
             # Numerically Differentiating The ln(Fugacity Coefficient) With Respect to ln(T)
@@ -432,7 +442,7 @@ class PhaseEnvelope:
             T = np.exp(Var[comp])
             a = EOS.eos_parameters(acentric, Tc, ac, T)
 
-            # Differentiating The First "C" Residuals With Respect to ln[P]/////////////////////////////////////////////////////////
+            # Differentiating The First "C" Residuals With Respect to ln[P]
             diffP = self.diff * Var[comp + 1]
             for ph in phase:
                 amix[ph], bmix[ph] = EOS.VdW1fMIX(comp, a, b, kij, lij, Composition[:, ph])
@@ -470,7 +480,7 @@ class PhaseEnvelope:
             Var = Var - step
             maxstep = max(abs(step / Var))
 
-            # Calculating The Natural Form Of Indep# endent Variables And Updating Compositions Of The Incipient Phase////////////////
+            # Calculating The Natural Form Of Indep# endent Variables And Updating Compositions Of The Incipient Phase
             K = np.exp(Var[0:comp])
             Composition[:, 1] = Composition[:, 0] * K
             T = np.exp(Var[comp + 0])
@@ -536,7 +546,7 @@ class PhaseEnvelope:
             sensitivity[self.specified_variable_index] = 1.0
             S = Var[self.specified_variable_index]
 
-        # Adjusting Stepsize////////////////////////////////////////////////////////////////////////////////////////////////////////
+        # Adjusting Stepsize
         dSmax = max(abs(Var[self.specified_variable_index]) ** 0.5 / 10.0, 0.1) * abs(dS) / dS
 
         dS *= 4.0 / it
@@ -545,14 +555,13 @@ class PhaseEnvelope:
 
         # Defining Specified Variable Value In The Next Point
         S += dS
-        # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        # Indep# endent Variables Initial Guess For The Next Point********************************************************************
+        # Indep# endent Variables Initial Guess For The Next Point
         Var += dS * sensitivity
 
         # **************************************************************************************************************************
 
-        # Analyzing Temperature Stepsize////////////////////////////////////////////////////////////////////////////////////////////
+        # Analyzing Temperature Stepsize
         T_old = T
         T = np.exp(Var[comp + 0])
         # Large Temperature Steps Are Not Advisable
@@ -561,9 +570,8 @@ class PhaseEnvelope:
             S -= dS
             Var -= dS * sensitivity
             T = np.exp(Var[comp])
-        # //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-        # Analyzing Proximity to Critical Point*************************************************************************************
+        # Analyzing Proximity to Critical Point
         # Seeking The Greatest K-factor
         maxK_i = np.argmax(abs(Var[0:comp]))
         # If The ln[K[i]] Stepsize Is Too Big, It Should Be Decreased

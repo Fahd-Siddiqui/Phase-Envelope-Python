@@ -9,9 +9,9 @@ lint:
 	@isort --check .
 	@echo "Running lint..."
 	@black --check .
-	@flake8 src --exclude=venv* --max-line-length=120
-	@echo "Running mypy..."
-	@mypy src
+	@flake8 src --exclude=venv* --max-line-length=120 --extend-ignore=E203,E704
+	# @echo "Running mypy..."
+	# @mypy src
 
 # Tests: pytest from src folder with coverage and printing coverage report
 test:

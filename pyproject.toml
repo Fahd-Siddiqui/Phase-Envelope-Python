@@ -1,6 +1,12 @@
 [tool.mypy]
-disallow_untyped_defs = true
-ignore_missing_imports = true
+strict = true
+[[tool.mypy.overrides]]
+module = [
+    "numpy.*"
+]
+strict=false
+disallow_untyped_calls = false
+disallow_untyped_defs = false
 
 [tool.black]
 line-length = 120
